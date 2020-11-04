@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use frank_jwt::{Algorithm, encode};
 use serde::Serialize;
+use color_eyre::{eyre::eyre, SectionExt, Section, eyre::Report};
 
 use crate::lib::config::AppConfig;
 
@@ -48,12 +49,17 @@ impl IotCoreAuthToken {
         }
     }
 
-    pub fn issue_new(&self) -> Result<String, frank_jwt::Error> {
-        let jwt = encode(json!(self.headers), &self.private_key, &json!(self.payload), Algorithm::RS256)?;
-        Ok(jwt)
+    pub fn issue_new(&self) -> Result<String, Report> {
+        match encode(json!(self.headers), &self.private_key, &json!(self.payload), Algorithm::RS256) {
+            Ok(jwt) => Ok(jwt),
+            Err(error) => Err(
+                eyre!("Unable to issue new JWT token")
+                    .with_section(move || error.to_string().header("Reason:"))
+                )
+        }
     }
 
-    pub fn renew(&mut self) -> Result<String, frank_jwt::Error> {
+    pub fn renew(&mut self) -> Result<String, Report> {
         self.payload = JWTPayload::new(&self.audience, &self.lifetime);
         self.issue_new()
     }

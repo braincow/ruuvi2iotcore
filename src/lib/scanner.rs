@@ -1,19 +1,20 @@
 use btleplug::bluez::{adapter::ConnectedAdapter, manager::Manager};
-use btleplug::api::{CentralEvent, Central, Peripheral, BDAddr};
+use btleplug::api::{CentralEvent, Central, Peripheral};
 use color_eyre::{eyre::eyre, SectionExt, Section, eyre::Report};
 use std::sync::mpsc::Receiver;
 use crossbeam::channel;
 use structview::View;
 use chrono;
+use serde::Serialize;
 
 use crate::lib::config::AppConfig;
 use crate::lib::ruuvi::RuuviTagDataFormat5;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct RuuviBluetoothBeacon {
     pub data: RuuviTagDataFormat5,
     pub timestamp: chrono::DateTime<chrono::Utc>,
-    pub address: BDAddr,
+    pub address: String
 }
 
 pub struct BluetoothScanner {
@@ -64,7 +65,7 @@ impl BluetoothScanner {
                             let beacon = RuuviBluetoothBeacon{
                                 data: *payload,
                                 timestamp: chrono::Utc::now(),
-                                address: bd_addr.unwrap()
+                                address: bd_addr.unwrap().to_string()
                             };
                             Some(beacon)
                         },
@@ -81,7 +82,9 @@ impl BluetoothScanner {
             } else {
                 debug!("No manufacturer data received in: {:?}", properties);
             }
-        } 
+        }
+
+        warn!("Exiting Bluetooth discovery loop.");
 
         Ok(())
     }

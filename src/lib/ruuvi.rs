@@ -1,6 +1,8 @@
 use std::fmt;
+use serde::Serialize;
+use serde::ser::{Serializer, SerializeStruct};
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct RuuviTagAccelaration {
     on_x_axis: f32,
     on_y_axis: f32,
@@ -35,6 +37,23 @@ pub struct RuuviTagDataFormat5 {
     powerinfo: structview::u16_be,
     movement_counter: u8,
     measurement_sequence_number: structview::u16_be
+}
+
+impl Serialize for RuuviTagDataFormat5 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("RuuviTagDataFormat5", 7)?;
+        state.serialize_field("temperature", &self.get_temperature())?;
+        state.serialize_field("humidity", &self.get_humidity())?;
+        state.serialize_field("atmospheric_pressure", &self.get_pressure())?;
+        state.serialize_field("acceleration", &self.get_accelaration())?;
+        state.serialize_field("powerinfo", &self.get_battery())?;
+        state.serialize_field("movement_counter", &self.get_movement_counter())?;
+        state.serialize_field("measurement_sequence_number", &self.get_measurement_sequence_number())?;
+        state.end()
+    }
 }
 
 impl RuuviTagDataFormat5 {

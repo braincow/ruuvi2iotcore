@@ -6,6 +6,7 @@ use color_eyre::{eyre::eyre, SectionExt, Section, eyre::Report};
 pub struct IdentityConfig {
     pub public_key: String,
     pub private_key: String,
+    pub ca_certs: String,
     token_lifetime: Option<u64>
 }
 
@@ -16,48 +17,6 @@ impl IdentityConfig {
         }
 
         self.token_lifetime.unwrap()
-    }
-
-    pub fn certificate_from_pem_file(&self) -> Result<Vec<u8>, Report> {
-        let certfile = match fs::read_to_string(&self.public_key) {
-            Ok(certfile) => certfile,
-            Err(error) => return Err(
-                eyre!("Unable to read PEM certificate file")
-                    .with_section(move || self.public_key.to_string().header("File name:"))
-                    .with_section(move || error.to_string().header("Reason:"))
-                )
-        };
-        let parsed_pem = match pem::parse(certfile) {
-            Ok(parsed_pem) => parsed_pem,
-            Err(error) => return Err(
-                eyre!("Unable to decode PEM certificate file")
-                    .with_section(move || self.public_key.to_string().header("File name:"))
-                    .with_section(move || error.to_string().header("Reason:"))
-                )
-        };
-
-        Ok(parsed_pem.contents)
-    }
-
-    pub fn key_from_pem_file(&self) -> Result<Vec<u8>, Report> {
-        let certfile = match fs::read_to_string(&self.private_key) {
-            Ok(certfile) => certfile,
-            Err(error) => return Err(
-                eyre!("Unable to read PEM key file")
-                    .with_section(move || self.private_key.to_string().header("File name:"))
-                    .with_section(move || error.to_string().header("Reason:"))
-                )
-        };
-        let parsed_pem = match pem::parse(certfile) {
-            Ok(parsed_pem) => parsed_pem,
-            Err(error) => return Err(
-                eyre!("Unable to decode PEM key file")
-                    .with_section(move || self.private_key.to_string().header("File name:"))
-                    .with_section(move || error.to_string().header("Reason:"))
-                )
-        };
-
-        Ok(parsed_pem.contents)
     }
 }
 
@@ -78,8 +37,6 @@ impl BluetoothConfig {
 
 #[derive(Debug,Deserialize,Serialize)]
 pub struct IotCoreConfig {
-    hostname: Option<String>,
-    port: Option<u16>,
     pub project_id: String,
     region: String,
     pub registry: String,
@@ -87,22 +44,6 @@ pub struct IotCoreConfig {
 }
 
 impl IotCoreConfig {
-
-    pub fn mqtt_bridge(&self) -> (String, u16) {
-        let mut srv = String::from("mqtt.googleapis.com");
-        let mut prt = 8883;
-
-        if let Some(hostname) = &self.hostname {
-            srv = hostname.to_string();
-        }
-
-        if let Some(port) = &self.port {
-            prt = *port
-        }
-
-        (srv, prt)
-    }
-
     pub fn client_id(&self) -> String {
         let client_id = format!("projects/{}/locations/{}/registries/{}/devices/{}",
             self.project_id,

@@ -68,7 +68,7 @@ fn main() -> Result<(), Report> {
     //let (mqtt_out, mqtt_in) = unbounded();
     let (event_s, event_r) = unbounded();
     let scanner = BluetoothScanner::build(&config, &event_s)?;
-    let iotcore = IotCoreClient::build(&config, &event_r)?;
+    let mut iotcore = IotCoreClient::build(&config, &event_r)?;
 
     thread::scope(|scope| {
         // spawn the mqtt thread

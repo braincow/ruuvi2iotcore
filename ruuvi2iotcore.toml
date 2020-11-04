@@ -2,14 +2,13 @@
 # openssl req -x509 -sha256 -nodes -days 365 -newkey rsa:2048 -keyout test.key -out test.crt
 public_key = "test.crt"
 private_key = "test.key"
-token_lifetime = 60
+ca_certs = "roots.pem"
+token_lifetime = 120
 
 [bluetooth]
 adapter = 0
 
 [iotcore]
-#hostname = "mqtt.googleapis.com"
-#port = 8883 # ssl port
 project_id = "bcow-me"
 region = "europe-west1"
 registry = "ruuvi2iotcore"
