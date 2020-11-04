@@ -1,0 +1,26 @@
+[package]
+name = "ruuvi2iotcore"
+version = "0.1.0"
+authors = ["Antti Peltonen <antti.peltonen@iki.fi>"]
+edition = "2018"
+description = "Ruuvi tag beacons to GCP iot core"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+color-eyre = "0.5.6"
+clap = "2.33.3"
+directories = "3.0.1"
+dotenv = "0.15.0"
+crossbeam = "0.8.0"
+btleplug = "0.5.4"
+structview = "1.1.0"
+serde = { version = "1.0.117", features = ["derive"] }
+toml = "0.5.7"
+log = "0.4.11"
+pretty_env_logger = "0.4.0"
+rumqttc = "0.2.0"
+pem = "0.8.1"
+frank_jwt = "3.1.2"
+serde_json = "1.0.59"
+chrono = "0.4.19"
