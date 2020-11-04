@@ -3,6 +3,8 @@ use std::time::Duration;
 use color_eyre::{eyre::eyre, SectionExt, Section, eyre::Report};
 use crossbeam::channel;
 use paho_mqtt as mqtt;
+use std::{time, thread};
+use std::sync::mpsc::Receiver;
 
 use crate::lib::config::AppConfig;
 use crate::lib::scanner::RuuviBluetoothBeacon;
@@ -18,14 +20,16 @@ pub struct IotCoreClient {
     channel_receiver: channel::Receiver<RuuviBluetoothBeacon>,
     jwt_factory: IotCoreAuthToken,
     events_topic: String,
-    //config_topic: String,
+    config_topic: String,
     state_topic: String,
-    //command_topic: String
+    command_topic: String,
+    consumer: Receiver<Option<mqtt::message::Message>>
 }
 
 impl IotCoreClient {
     fn publish_message(&mut self, topic: String, msg: Vec<u8>) -> Result<(), Report> {
-        // fullfill IoT Core's odd JWT based authentication
+        // fullfill IoT Core's odd JWT based authentication needs by disconnecting & connecting with new one
+        //   when needed
         if !self.jwt_factory.is_valid(60) || !self.client.is_connected() {
             warn!("JWT token has/is about to expire or we have no connection. Initiating reconnect.");
             self.disconnect()?;
@@ -75,6 +79,15 @@ impl IotCoreClient {
                 )
         };
 
+        // subscribe to command and control channels
+        match self.client.subscribe_many(&[self.config_topic.to_string(), self.command_topic.to_string()], &[mqtt::QOS_1, mqtt::QOS_1]) {
+            Ok(_) => {},
+            Err(error) => return Err(
+                eyre!("Error while subscribing to command and control topics")
+                    .with_section(move || error.to_string().header("Reason:"))
+                )
+        }
+
         Ok(())
     }
 
@@ -87,7 +100,8 @@ impl IotCoreClient {
         // loop messages and wait for a ready signal
         let running = true;
         while running {
-            match self.channel_receiver.recv() {
+            // check into the channel to see if there are beacons to relay to the mqtt broker
+            match self.channel_receiver.try_recv() {
                 Ok(msg) => {
                     self.publish_message(self.events_topic.to_string(), json!(msg).to_string().as_bytes().to_vec())?;
                 },
@@ -95,6 +109,19 @@ impl IotCoreClient {
                     trace!("No bluetooth beacon in channel: {}", error);
                 }
             };
+
+            // check into the subscriptions if there are any incoming cnc messages
+            match self.consumer.try_recv() {
+                Ok(msg) => {
+                    trace!("{:?}", msg);
+                },
+                Err(error) => {
+                    trace!("No incoming cnc messages in topic consumer: {}", error);
+                }
+            };
+
+            // sleep for a while to reduce amount of CPU burn and to idle for a while
+            thread::sleep(time::Duration::from_millis(10));
         }
 
         self.publish_message(self.state_topic.to_string(), STOP_MESSAGE.as_bytes().to_vec())?;
@@ -145,6 +172,9 @@ impl IotCoreClient {
             .ssl_options(ssl_options.clone())
             .finalize();
 
+        // thru mspc relay incoming messages from cnc topics
+        let consumer = cli.start_consuming();
+
         Ok(IotCoreClient {
             ssl_opts: ssl_options,
             conn_opts: conn_opts,
@@ -152,9 +182,10 @@ impl IotCoreClient {
             jwt_factory: jwt_factory,
             channel_receiver: r.clone(),
             events_topic: format!("/devices/{}/events", config.iotcore.device_id),
-            //config_topic: format!("/devices/{}/config", config.iotcore.device_id),
+            config_topic: format!("/devices/{}/config", config.iotcore.device_id),
             state_topic: format!("/devices/{}/state", config.iotcore.device_id),
-            //command_topic: format!("/devices/{}/commands/#", config.iotcore.device_id)
+            command_topic: format!("/devices/{}/commands/#", config.iotcore.device_id),
+            consumer: consumer
         })
     }
 }
