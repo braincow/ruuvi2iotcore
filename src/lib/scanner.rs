@@ -25,66 +25,70 @@ pub struct BluetoothScanner {
 
 impl BluetoothScanner {
     pub fn start_scanner(&self) -> Result<(), Report> {
-        // use only passive scan as we are interested in beacons only
-        self.bt_central.active(false);
-        match self.bt_central.start_scan() {
-            Ok(_) => {},
-            Err(error) => return Err(
-                eyre!("Unable to start Bluetooth scan")
-                    .with_section(move || error.to_string().header("Reason:")) 
-                )
-        };
 
-        while let Ok(event) = self.bt_receiver.recv() {
-            let bd_addr = match event {
-                CentralEvent::DeviceDiscovered(bd_addr) => Some(bd_addr),
-                CentralEvent::DeviceUpdated(bd_addr) => Some(bd_addr),
-                _ => None
+        let running = true;
+        while running {
+            // use only passive scan as we are interested in beacons only
+            self.bt_central.active(false);
+            match self.bt_central.start_scan() {
+                Ok(_) => {},
+                Err(error) => return Err(
+                    eyre!("Unable to start Bluetooth scan")
+                        .with_section(move || error.to_string().header("Reason:")) 
+                    )
             };
 
-            // FIXME: unwrap()
-            let peripheral = self.bt_central.peripheral(bd_addr.unwrap()).unwrap();
-            let properties = peripheral.properties();
+            while let Ok(event) = self.bt_receiver.recv() {
+                let bd_addr = match event {
+                    CentralEvent::DeviceDiscovered(bd_addr) => Some(bd_addr),
+                    CentralEvent::DeviceUpdated(bd_addr) => Some(bd_addr),
+                    _ => None
+                };
 
-            if let Some(data) = properties.manufacturer_data {
-                if data[0] == 153 && data[1] == 4 {
-                    // these values in DEC instead of HEX to identify ruuvi tags with dataformat 5
-                    // ^--- fields in index 0 and 1 indicate 99 4 as the manufacturer (ruuvi) and index 3 points data version
-                    let packet = match data[2] {
-                        // https://github.com/ruuvi/ruuvi-sensor-protocols/blob/master/dataformat_05.md
-                        // ^--- field in index 3 points to data version and everything forward from there are data points
-                        // @TODO: error handling, aka handle unwrap()
-                        5 => {
-                            let payload = match RuuviTagDataFormat5::view(&data[3..]) {
-                                Ok(payload) => payload,
-                                Err(error) => return Err(
-                                    eyre!("Unable to parse Bluetooth packets peripheral properties into Ruuvitag v5 structure.")
-                                        .with_section(move || error.to_string().header("Reason:")) 
-                                    )
-                            };
-                            let beacon = RuuviBluetoothBeacon{
-                                data: *payload,
-                                timestamp: chrono::Utc::now(),
-                                address: bd_addr.unwrap().to_string()
-                            };
-                            Some(beacon)
-                        },
-                        _ => {
-                            warn!("Ruuvitag data format '{}' not implemented yet.", data[2]);
-                            None
+                // FIXME: unwrap()
+                let peripheral = self.bt_central.peripheral(bd_addr.unwrap()).unwrap();
+                let properties = peripheral.properties();
+
+                if let Some(data) = properties.manufacturer_data {
+                    if data[0] == 153 && data[1] == 4 {
+                        // these values in DEC instead of HEX to identify ruuvi tags with dataformat 5
+                        // ^--- fields in index 0 and 1 indicate 99 4 as the manufacturer (ruuvi) and index 3 points data version
+                        let packet = match data[2] {
+                            // https://github.com/ruuvi/ruuvi-sensor-protocols/blob/master/dataformat_05.md
+                            // ^--- field in index 3 points to data version and everything forward from there are data points
+                            // @TODO: error handling, aka handle unwrap()
+                            5 => {
+                                let payload = match RuuviTagDataFormat5::view(&data[3..]) {
+                                    Ok(payload) => payload,
+                                    Err(error) => return Err(
+                                        eyre!("Unable to parse Bluetooth packets peripheral properties into Ruuvitag v5 structure.")
+                                            .with_section(move || error.to_string().header("Reason:")) 
+                                        )
+                                };
+                                let beacon = RuuviBluetoothBeacon{
+                                    data: *payload,
+                                    timestamp: chrono::Utc::now(),
+                                    address: bd_addr.unwrap().to_string()
+                                };
+                                Some(beacon)
+                            },
+                            _ => {
+                                warn!("Ruuvitag data format '{}' not implemented yet.", data[2]);
+                                None
+                            }
+                        };
+        
+                        if let Some(packet) = packet {
+                            self.channel_sender.send(packet).unwrap();
                         }
-                    };
-    
-                    if let Some(packet) = packet {
-                        self.channel_sender.send(packet).unwrap();
                     }
+                } else {
+                    debug!("No manufacturer data received in: {:?}", properties);
                 }
-            } else {
-                debug!("No manufacturer data received in: {:?}", properties);
             }
+            warn!("Exiting Bluetooth discovery loop.");
         }
-
-        warn!("Exiting Bluetooth discovery loop.");
+        warn!("Shutting down Bluetooth discovery service");
 
         Ok(())
     }

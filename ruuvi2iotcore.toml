@@ -3,7 +3,7 @@
 public_key = "test.crt"
 private_key = "test.key"
 ca_certs = "roots.pem"
-token_lifetime = 120
+token_lifetime = 3600
 
 [bluetooth]
 adapter = 0
