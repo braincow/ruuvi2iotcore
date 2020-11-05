@@ -25,6 +25,7 @@ impl fmt::Display for RuuviTagAccelaration {
     }
 }
 
+// https://github.com/ruuvi/ruuvi-sensor-protocols/blob/master/dataformat_05.md
 #[derive(Debug,Clone, Copy, structview::View)]
 #[repr(C)]
 pub struct RuuviTagDataFormat5 {
