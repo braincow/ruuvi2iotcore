@@ -78,16 +78,16 @@ impl RuuviTagDataFormat5 {
         }
     }
 
-    pub fn get_battery(&self) -> u16 {
+    pub fn get_battery(&self) -> f32 {
         let powerinfo = self.powerinfo.to_int();
         let battery_voltage = powerinfo >> 5;
-        battery_voltage + 1600
+        battery_voltage as f32 + 1600.0
     }
 
     pub fn get_tx_power(&self) -> i8 {
         let powerinfo = self.powerinfo.to_int();
         let tx_power = powerinfo & 0b11111;
-        (tx_power * 2 - 40) as i8
+        (tx_power * 2) as i8 - 40
     }
 
     pub fn get_movement_counter(&self) -> u8 {
@@ -110,5 +110,67 @@ impl fmt::Display for RuuviTagDataFormat5 {
             self.get_tx_power(),
             self.get_movement_counter(),
             self.get_measurement_sequence_number())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /*
+     * About test cases:
+     * 
+     * https://github.com/ruuvi/ruuvi-sensor-protocols/blob/master/dataformat_05.md
+     * outlines the test cases for valid, min and max values
+     */
+    use crate::lib::ruuvi::RuuviTagDataFormat5;
+    use structview::View;
+    #[test]
+    fn valid_values() {
+        let hex_string = "0512FC5394C37C0004FFFC040CAC364200CDCBB8334C884F";
+        let data = hex::decode(hex_string).unwrap();
+        let beacon = RuuviTagDataFormat5::view(&data[1..]).unwrap();
+        assert_eq!(beacon.get_temperature(), 24.3);
+        assert_eq!(beacon.get_pressure(), 1000.44);
+        assert_eq!(beacon.get_humidity(), 53.49);
+        assert_eq!(beacon.get_accelaration().on_x_axis / 1000.0, 0.004);
+        assert_eq!(beacon.get_accelaration().on_y_axis / 1000.0, -0.004);
+        assert_eq!(beacon.get_accelaration().on_z_axis / 1000.0, 1.036);
+        assert_eq!(beacon.get_tx_power(), 4);
+        assert_eq!(beacon.get_battery() / 1000.0, 2.977);
+        assert_eq!(beacon.get_movement_counter(), 66);
+        assert_eq!(beacon.get_measurement_sequence_number(), 205);
+    }
+
+    #[test]
+    fn min_values() {
+        let hex_string = "058001000000008001800180010000000000CBB8334C884F";
+        let data = hex::decode(hex_string).unwrap();
+        let beacon = RuuviTagDataFormat5::view(&data[1..]).unwrap();
+        assert_eq!(beacon.get_temperature(), -163.835);
+        assert_eq!(beacon.get_pressure(), 500.0);
+        assert_eq!(beacon.get_humidity(), 0.000);
+        assert_eq!(beacon.get_accelaration().on_x_axis / 1000.0, -32.767);
+        assert_eq!(beacon.get_accelaration().on_y_axis / 1000.0, -32.767);
+        assert_eq!(beacon.get_accelaration().on_z_axis / 1000.0, -32.767);
+        assert_eq!(beacon.get_tx_power(), -40);
+        assert_eq!(beacon.get_battery() / 1000.0, 1.600);
+        assert_eq!(beacon.get_movement_counter(), 0);
+        assert_eq!(beacon.get_measurement_sequence_number(), 0);
+    }
+
+    #[test]
+    fn max_values() {
+        let hex_string = "057FFFFFFEFFFE7FFF7FFF7FFFFFDEFEFFFECBB8334C884F";
+        let data = hex::decode(hex_string).unwrap();
+        let beacon = RuuviTagDataFormat5::view(&data[1..]).unwrap();
+        assert_eq!(beacon.get_temperature(), 163.835);
+        assert_eq!(beacon.get_pressure(), 1155.34);
+        assert_eq!(beacon.get_humidity(), 163.8350);
+        assert_eq!(beacon.get_accelaration().on_x_axis / 1000.0, 32.767);
+        assert_eq!(beacon.get_accelaration().on_y_axis / 1000.0, 32.767);
+        assert_eq!(beacon.get_accelaration().on_z_axis / 1000.0, 32.767);
+        assert_eq!(beacon.get_tx_power(), 20);
+        assert_eq!(beacon.get_battery() / 1000.0, 3.646);
+        assert_eq!(beacon.get_movement_counter(), 254);
+        assert_eq!(beacon.get_measurement_sequence_number(), 65534);
     }
 }
