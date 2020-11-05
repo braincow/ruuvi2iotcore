@@ -125,6 +125,8 @@ impl IotCoreClient {
         }
 
         self.publish_message(self.state_topic.to_string(), STOP_MESSAGE.as_bytes().to_vec())?;
+
+        self.disconnect()?;
         
         Ok(())
     }
