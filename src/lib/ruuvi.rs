@@ -78,10 +78,10 @@ impl RuuviTagDataFormat5 {
         }
     }
 
-    pub fn get_battery(&self) -> f32 {
+    pub fn get_battery(&self) -> u16 {
         let powerinfo = self.powerinfo.to_int();
         let battery_voltage = powerinfo >> 5;
-        battery_voltage as f32 + 1600.0
+        (battery_voltage + 1600) as u16
     }
 
     pub fn get_tx_power(&self) -> i8 {
@@ -135,7 +135,7 @@ mod tests {
         assert_eq!(beacon.get_accelaration().on_y_axis / 1000.0, -0.004);
         assert_eq!(beacon.get_accelaration().on_z_axis / 1000.0, 1.036);
         assert_eq!(beacon.get_tx_power(), 4);
-        assert_eq!(beacon.get_battery() / 1000.0, 2.977);
+        assert_eq!(beacon.get_battery(), 2977);
         assert_eq!(beacon.get_movement_counter(), 66);
         assert_eq!(beacon.get_measurement_sequence_number(), 205);
     }
@@ -152,7 +152,7 @@ mod tests {
         assert_eq!(beacon.get_accelaration().on_y_axis / 1000.0, -32.767);
         assert_eq!(beacon.get_accelaration().on_z_axis / 1000.0, -32.767);
         assert_eq!(beacon.get_tx_power(), -40);
-        assert_eq!(beacon.get_battery() / 1000.0, 1.600);
+        assert_eq!(beacon.get_battery(), 1600);
         assert_eq!(beacon.get_movement_counter(), 0);
         assert_eq!(beacon.get_measurement_sequence_number(), 0);
     }
@@ -169,7 +169,7 @@ mod tests {
         assert_eq!(beacon.get_accelaration().on_y_axis / 1000.0, 32.767);
         assert_eq!(beacon.get_accelaration().on_z_axis / 1000.0, 32.767);
         assert_eq!(beacon.get_tx_power(), 20);
-        assert_eq!(beacon.get_battery() / 1000.0, 3.646);
+        assert_eq!(beacon.get_battery(), 3646);
         assert_eq!(beacon.get_movement_counter(), 254);
         assert_eq!(beacon.get_measurement_sequence_number(), 65534);
     }
