@@ -64,7 +64,6 @@ fn main() -> Result<(), Report> {
     // read configuration
     let config = AppConfig::read_config(Path::new(matches.value_of("config").unwrap()))?;
 
-    // TODO: determine subcommand from App matches
     //let (mqtt_out, mqtt_in) = unbounded();
     let (event_s, event_r) = unbounded();
     let scanner = BluetoothScanner::build(&config, &event_s)?;
@@ -83,7 +82,6 @@ fn main() -> Result<(), Report> {
     }).unwrap();
 
     // nothing to do so print the usage and version information
-    // TODO: print usage only when none of the subcommands matches
     println!("{}", matches.usage());
 
     // return with Ok (success)
