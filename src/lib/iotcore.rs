@@ -15,6 +15,19 @@ static READY_MESSAGE: &str = "{state: \"RUNNING\"}";
 static STOP_MESSAGE: &str = "{state: \"STOPPING\"}";
 
 #[derive(Debug,Deserialize)]
+enum CNCCommand {
+    #[serde(rename = "collect")]
+    COLLECT,
+    #[serde(rename = "pause")]
+    PAUSE
+}
+
+#[derive(Debug,Deserialize)]
+struct CNCCommandMessage {
+    command: CNCCommand
+}
+
+#[derive(Debug,Deserialize)]
 enum CollectMode {
     #[serde(rename = "blacklist")]
     BLACKLIST,
@@ -37,9 +50,10 @@ pub struct IotCoreClient {
     events_topic: String,
     config_topic: String,
     state_topic: String,
-    command_topic: String,
+    command_topic_root: String,
     consumer: Receiver<Option<mqtt::message::Message>>,
-    collectconfig: Option<CollectConfig>
+    collectconfig: Option<CollectConfig>,
+    collecting: bool
 }
 
 impl IotCoreClient {
@@ -96,7 +110,8 @@ impl IotCoreClient {
         };
 
         // subscribe to command and control channels
-        match self.client.subscribe_many(&[self.config_topic.to_string(), self.command_topic.to_string()], &[mqtt::QOS_1, mqtt::QOS_1]) {
+        match self.client.subscribe_many(&[self.config_topic.to_string(), format!("{}/#", self.command_topic_root.to_string())],
+                &[mqtt::QOS_1, mqtt::QOS_1]) {
             Ok(_) => {},
             Err(error) => return Err(
                 eyre!("Error while subscribing to command and control topics")
@@ -124,8 +139,38 @@ impl IotCoreClient {
 
                         if msg.topic() == self.config_topic {
                             // we received new config, decode it
-                            self.collectconfig = Some(serde_json::from_str(&msg.payload_str()).unwrap());
+                            self.collectconfig = match serde_json::from_str(&msg.payload_str()) {
+                                Ok(config) => Some(config),
+                                Err(error) => { 
+                                    error!("Unable to parse new collect config: {}", error);
+                                    None
+                                }
+                            };
                             info!("New collect config activated: {:?}", self.collectconfig);
+                        } else if msg.topic().starts_with(&self.command_topic_root) {
+                            // command was sent into root or subfolder of command channel
+                            // TODO: implement subfolder support
+                            let command: Option<CNCCommandMessage> = match serde_json::from_str(&msg.payload_str()) {
+                                Ok(command) => Some(command),
+                                Err(error) => { 
+                                    error!("Unable to parse CNC command: {}", error);
+                                    None
+                                }
+                            };
+                            if let Some(command) = command {
+                                match command.command {
+                                    CNCCommand::COLLECT => {
+                                        self.collecting = true;
+                                        info!("CNC command received: START collecting beacons");
+                                    },
+                                    CNCCommand::PAUSE => {
+                                        self.collecting = false;
+                                        warn!("CNC command received: STOP collecting beacons");
+                                    }
+                                };    
+                            }
+                        } else {
+                            warn!("Unimplemented CNC topic in received message.");
                         }
                     }
                 },
@@ -160,7 +205,7 @@ impl IotCoreClient {
                         None => true
                     };
                     // submit the beacon to iotcore
-                    if publish {
+                    if publish && self.collecting {
                         trace!("iotcore publish: {:?}", msg);
                         self.publish_message(self.events_topic.to_string(), json!(msg).to_string().as_bytes().to_vec())?;
                     }
@@ -242,9 +287,10 @@ impl IotCoreClient {
             events_topic: events_topic,
             config_topic: format!("/devices/{}/config", config.iotcore.device_id),
             state_topic: format!("/devices/{}/state", config.iotcore.device_id),
-            command_topic: format!("/devices/{}/commands/#", config.iotcore.device_id),
+            command_topic_root: format!("/devices/{}/commands", config.iotcore.device_id),
             consumer: consumer,
-            collectconfig: None
+            collectconfig: None,
+            collecting: true
         })
     }
 }
