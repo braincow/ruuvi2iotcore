@@ -219,7 +219,7 @@ impl IotCoreClient {
                             message_queue.push(msg);
                         }
                     }
-                    println!("Message queue size: {}/{}", message_queue.len(), self.collection_size);
+                    debug!("Message queue size: {}/{}", message_queue.len(), self.collection_size);
                 },
                 Err(error) => {
                     trace!("No bluetooth beacon in channel: {}", error);
