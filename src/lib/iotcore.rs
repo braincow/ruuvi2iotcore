@@ -1,3 +1,4 @@
+use serde::Deserialize;
 use std::path::Path;
 use std::time::Duration;
 use color_eyre::{eyre::eyre, SectionExt, Section, eyre::Report};
@@ -13,6 +14,20 @@ use crate::lib::jwt::IotCoreAuthToken;
 static READY_MESSAGE: &str = "{state: \"RUNNING\"}";
 static STOP_MESSAGE: &str = "{state: \"STOPPING\"}";
 
+#[derive(Debug,Deserialize)]
+enum CollectMode {
+    #[serde(rename = "blacklist")]
+    BLACKLIST,
+    #[serde(rename = "whitelist")]
+    WHITELIST
+}
+
+#[derive(Debug,Deserialize)]
+struct CollectConfig {
+    mode: CollectMode,
+    addresses: Vec<String>
+}
+
 pub struct IotCoreClient {
     ssl_opts: mqtt::SslOptions,
     conn_opts: mqtt::ConnectOptions,
@@ -23,7 +38,8 @@ pub struct IotCoreClient {
     config_topic: String,
     state_topic: String,
     command_topic: String,
-    consumer: Receiver<Option<mqtt::message::Message>>
+    consumer: Receiver<Option<mqtt::message::Message>>,
+    collectconfig: Option<CollectConfig>
 }
 
 impl IotCoreClient {
@@ -100,23 +116,57 @@ impl IotCoreClient {
         // loop messages and wait for a ready signal
         let running = true;
         while running {
-            // check into the channel to see if there are beacons to relay to the mqtt broker
-            match self.channel_receiver.try_recv() {
-                Ok(msg) => {
-                    self.publish_message(self.events_topic.to_string(), json!(msg).to_string().as_bytes().to_vec())?;
-                },
-                Err(error) => {
-                    trace!("No bluetooth beacon in channel: {}", error);
-                }
-            };
-
             // check into the subscriptions if there are any incoming cnc messages
             match self.consumer.try_recv() {
-                Ok(msg) => {
-                    trace!("{:?}", msg);
+                Ok(optmsg) => {
+                    if let Some(msg) = optmsg {
+                        trace!("{:?}", msg);
+
+                        if msg.topic() == self.config_topic {
+                            // we received new config, decode it
+                            self.collectconfig = Some(serde_json::from_str(&msg.payload_str()).unwrap());
+                            info!("New collect config activated: {:?}", self.collectconfig);
+                        }
+                    }
                 },
                 Err(error) => {
                     trace!("No incoming cnc messages in topic consumer: {}", error);
+                }
+            };
+
+            // check into the channel to see if there are beacons to relay to the mqtt broker
+            match self.channel_receiver.try_recv() {
+                Ok(msg) => {
+                    // check against collectconfig if this beacon shall be submitted
+                    let publish = match &self.collectconfig {
+                        Some(collectconfig) => {
+                            match collectconfig.mode {
+                                CollectMode::BLACKLIST => {
+                                    if collectconfig.addresses.contains(&msg.address) {
+                                        false
+                                    } else {
+                                        true
+                                    }
+                                },
+                                CollectMode::WHITELIST => {
+                                    if collectconfig.addresses.contains(&msg.address) {
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                }
+                            }
+                        },
+                        None => true
+                    };
+                    // submit the beacon to iotcore
+                    if publish {
+                        trace!("iotcore publish: {:?}", msg);
+                        self.publish_message(self.events_topic.to_string(), json!(msg).to_string().as_bytes().to_vec())?;
+                    }
+                },
+                Err(error) => {
+                    trace!("No bluetooth beacon in channel: {}", error);
                 }
             };
 
@@ -193,7 +243,8 @@ impl IotCoreClient {
             config_topic: format!("/devices/{}/config", config.iotcore.device_id),
             state_topic: format!("/devices/{}/state", config.iotcore.device_id),
             command_topic: format!("/devices/{}/commands/#", config.iotcore.device_id),
-            consumer: consumer
+            consumer: consumer,
+            collectconfig: None
         })
     }
 }
