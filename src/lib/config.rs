@@ -40,7 +40,8 @@ pub struct IotCoreConfig {
     pub project_id: String,
     region: String,
     pub registry: String,
-    pub device_id: String
+    pub device_id: String,
+    pub event_subfolder: Option<String>
 }
 
 impl IotCoreConfig {

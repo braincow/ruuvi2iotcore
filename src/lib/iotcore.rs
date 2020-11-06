@@ -177,13 +177,19 @@ impl IotCoreClient {
         // thru mspc relay incoming messages from cnc topics
         let consumer = cli.start_consuming();
 
+        // if we have subfolder defined for our telemetry use that in the events topic name
+        let events_topic = match &config.iotcore.event_subfolder {
+            Some(subfolder) => format!("/devices/{}/events/{}", config.iotcore.device_id, subfolder),
+            None => format!("/devices/{}/events", config.iotcore.device_id)
+        };
+
         Ok(IotCoreClient {
             ssl_opts: ssl_options,
             conn_opts: conn_opts,
             client: cli,
             jwt_factory: jwt_factory,
             channel_receiver: r.clone(),
-            events_topic: format!("/devices/{}/events", config.iotcore.device_id),
+            events_topic: events_topic,
             config_topic: format!("/devices/{}/config", config.iotcore.device_id),
             state_topic: format!("/devices/{}/state", config.iotcore.device_id),
             command_topic: format!("/devices/{}/commands/#", config.iotcore.device_id),

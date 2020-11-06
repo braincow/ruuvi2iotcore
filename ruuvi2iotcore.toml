@@ -13,5 +13,6 @@ project_id = "bcow-me"
 region = "europe-west1"
 registry = "ruuvi2iotcore"
 device_id = "dev"
+event_subfolder = "dev"
 
 # eof
