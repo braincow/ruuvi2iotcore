@@ -53,7 +53,8 @@ pub struct IotCoreClient {
     command_topic_root: String,
     consumer: Receiver<Option<mqtt::message::Message>>,
     collectconfig: Option<CollectConfig>,
-    collecting: bool
+    collecting: bool,
+    collection_size: usize
 }
 
 impl IotCoreClient {
@@ -126,7 +127,9 @@ impl IotCoreClient {
 
         self.connect()?;
         
-        self.publish_message(self.state_topic.to_string(), READY_MESSAGE.as_bytes().to_vec())?;
+        self.publish_message(self.state_topic.to_string(), READY_MESSAGE.as_bytes().to_vec())?; // if this fails our connection is dead anyway
+
+        let mut message_queue: Vec<RuuviBluetoothBeacon> = Vec::new();
 
         // loop messages and wait for a ready signal
         let running = true;
@@ -206,9 +209,17 @@ impl IotCoreClient {
                     };
                     // submit the beacon to iotcore
                     if publish && self.collecting {
-                        trace!("iotcore publish: {:?}", msg);
-                        self.publish_message(self.events_topic.to_string(), json!(msg).to_string().as_bytes().to_vec())?;
+                        if message_queue.len() >= self.collection_size {
+                            match self.publish_message(self.events_topic.to_string(), json!(message_queue).to_string().as_bytes().to_vec()) {
+                                Ok(_) => trace!("iotcore publish: {:?}", message_queue),
+                                Err(error) => error!("Error on publishing message queue to MQTT: '{}'. Will retry.", error)
+                            };
+                            message_queue = Vec::new();
+                        } else {
+                            message_queue.push(msg);
+                        }
                     }
+                    println!("Message queue size: {}/{}", message_queue.len(), self.collection_size);
                 },
                 Err(error) => {
                     trace!("No bluetooth beacon in channel: {}", error);
@@ -219,7 +230,7 @@ impl IotCoreClient {
             thread::sleep(time::Duration::from_millis(10));
         }
 
-        self.publish_message(self.state_topic.to_string(), STOP_MESSAGE.as_bytes().to_vec())?;
+        self.publish_message(self.state_topic.to_string(), STOP_MESSAGE.as_bytes().to_vec())?; // doesnt matter if we throw error here as we are gointo die anyway
 
         self.disconnect()?;
         
@@ -290,7 +301,8 @@ impl IotCoreClient {
             command_topic_root: format!("/devices/{}/commands", config.iotcore.device_id),
             consumer: consumer,
             collectconfig: None,
-            collecting: true
+            collecting: true,
+            collection_size: config.iotcore.collection_size()
         })
     }
 }

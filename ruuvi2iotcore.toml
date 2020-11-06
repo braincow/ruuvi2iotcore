@@ -14,5 +14,6 @@ region = "europe-west1"
 registry = "ruuvi2iotcore"
 device_id = "dev"
 event_subfolder = "dev"
+collection_size = 10
 
 # eof

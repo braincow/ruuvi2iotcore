@@ -41,10 +41,18 @@ pub struct IotCoreConfig {
     region: String,
     pub registry: String,
     pub device_id: String,
-    pub event_subfolder: Option<String>
+    pub event_subfolder: Option<String>,
+    pub collection_size: Option<usize>
 }
 
 impl IotCoreConfig {
+    pub fn collection_size(&self) -> usize {
+        match self.collection_size {
+            Some(size) => size,
+            None => 0
+        }
+    }
+
     pub fn client_id(&self) -> String {
         let client_id = format!("projects/{}/locations/{}/registries/{}/devices/{}",
             self.project_id,
