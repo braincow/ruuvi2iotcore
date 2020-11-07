@@ -164,11 +164,11 @@ impl IotCoreClient {
                                 match command.command {
                                     CNCCommand::COLLECT => {
                                         self.collecting = true;
-                                        info!("CNC command received: START collecting beacons");
+                                        info!("CNC command received: COLLECT beacons");
                                     },
                                     CNCCommand::PAUSE => {
                                         self.collecting = false;
-                                        warn!("CNC command received: STOP collecting beacons");
+                                        warn!("CNC command received: PAUSE collecting beacons");
                                     }
                                 };    
                             }
