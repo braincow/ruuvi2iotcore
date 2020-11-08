@@ -72,12 +72,18 @@ fn main() -> Result<(), Report> {
     thread::scope(|scope| {
         // spawn the mqtt thread
         scope.spawn(move|_| {
-            iotcore.start_client().unwrap();
+            loop {
+                iotcore.start_client().unwrap();
+                warn!("Restarting iotcore client");
+            }
         });
 
         // spawn bt scan thread
         scope.spawn(move|_| {
-            scanner.start_scanner().unwrap();
+            loop {
+                scanner.start_scanner().unwrap();
+                warn!("Restarting bluetooth scanner");
+            }
         });
     }).unwrap();
 
