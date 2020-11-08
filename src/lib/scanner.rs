@@ -83,7 +83,7 @@ impl BluetoothScanner {
                         }
                     }
                 } else {
-                    debug!("No manufacturer data received in: {:?}", properties);
+                    trace!("No manufacturer data received in: {:?}", properties);
                 }
             }
             warn!("Exiting Bluetooth discovery loop.");
