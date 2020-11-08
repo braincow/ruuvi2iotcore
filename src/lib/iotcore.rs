@@ -98,6 +98,8 @@ impl IotCoreClient {
                     .with_section(move || error.to_string().header("Reason:"))
                 )
         }
+        
+        warn!("Disconnecting from MQTT broker");
     }
 
     fn connect(&self) -> Result<(), Report> {
@@ -219,7 +221,7 @@ impl IotCoreClient {
                             message_queue.push(msg);
                         }
                     }
-                    debug!("Message queue size: {}/{}", message_queue.len(), self.collection_size);
+                    trace!("Message queue size: {}/{}", message_queue.len(), self.collection_size);
                 },
                 Err(error) => {
                     trace!("No bluetooth beacon in channel: {}", error);
@@ -229,7 +231,7 @@ impl IotCoreClient {
             // sleep for a while to reduce amount of CPU burn and idle for a while
             thread::sleep(time::Duration::from_millis(10));
         }
-
+        
         self.publish_message(self.state_topic.to_string(), STOP_MESSAGE.as_bytes().to_vec())?; // doesnt matter if we throw error here as we are gointo die anyway
 
         self.disconnect()?;
