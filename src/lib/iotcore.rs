@@ -91,6 +91,7 @@ impl IotCoreClient {
     }
 
     fn disconnect(&self) -> Result<(), Report> {
+        warn!("Disconnecting from MQTT broker");
         match self.client.disconnect(None) {
             Ok(_) => Ok(()),
             Err(error) => Err(
@@ -98,8 +99,6 @@ impl IotCoreClient {
                     .with_section(move || error.to_string().header("Reason:"))
                 )
         }
-        
-        warn!("Disconnecting from MQTT broker");
     }
 
     fn connect(&self) -> Result<(), Report> {
