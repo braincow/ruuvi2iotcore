@@ -53,13 +53,13 @@ impl BluetoothScanner {
                         if initially_started {
                             warn!("(Re)starting Bluetooth scan due to hacky fix to random deaths.")
                         }
+                        initially_started = true;
                     },
                     Err(error) => return Err(
                         eyre!("Unable to start Bluetooth scan")
                             .with_section(move || error.to_string().header("Reason:")) 
                         )
                 };
-                initially_started = true;
             }
     
             // peek into cnc channel to receive commands from iotcore
