@@ -28,7 +28,7 @@ pub struct BluetoothScanner {
 
 impl BluetoothScanner {
     pub fn start_scanner(&self) -> Result<(), Report> {
-        let then = time::SystemTime::now();
+        let mut then = time::SystemTime::now();
         let mut initially_started = false;
         loop {
             if then.elapsed().unwrap() >= time::Duration::from_secs(60) || !initially_started {
@@ -49,6 +49,7 @@ impl BluetoothScanner {
                             warn!("(Re)starting Bluetooth scan due to hacky fix to random deaths.")
                         }
                         initially_started = true;
+                        then = time::SystemTime::now();
                     },
                     Err(error) => return Err(
                         eyre!("Unable to start Bluetooth scan")
