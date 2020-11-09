@@ -12,8 +12,8 @@ use crate::lib::config::AppConfig;
 use crate::lib::scanner::RuuviBluetoothBeacon;
 use crate::lib::jwt::IotCoreAuthToken;
 
-static READY_MESSAGE: &str = "{state: \"RUNNING\"}";
-static STOP_MESSAGE: &str = "{state: \"STOPPING\"}";
+static READY_MESSAGE: &str = "{\"state\": \"RUNNING\"}";
+static STOP_MESSAGE: &str = "{\"state\": \"STOPPING\"}";
 
 #[derive(Debug,Deserialize, Clone)]
 pub enum CNCCommand {
