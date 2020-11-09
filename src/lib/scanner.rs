@@ -27,7 +27,7 @@ pub struct BluetoothScanner {
     cnc_receiver: channel::Receiver<CNCCommandMessage>
 }
 
-static RESTART_THRESHOLD:usize = 250000;
+static RESTART_THRESHOLD:usize = 1000000;
 
 impl BluetoothScanner {
     pub fn start_scanner(&self) -> Result<(), Report> {
