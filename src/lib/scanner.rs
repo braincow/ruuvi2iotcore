@@ -136,11 +136,27 @@ impl BluetoothScanner {
                 )
         };
 
-        let adapter = match adapters.into_iter().nth(config.bluetooth.adapter_index()) {
+        let mut adapter = match adapters.into_iter().nth(config.bluetooth.adapter_index()) {
             Some(adapter) => adapter,
             None => return Err(
                 eyre!("Configured Bluetooth adapter not found.")
                     .with_section(move || config.bluetooth.adapter_index().to_string().header("Configured adapter index:"))
+                )
+        };
+
+        // reset the adapter -- clears out any errant state
+        adapter = match manager.down(&adapter) {
+            Ok(adapter) => adapter,
+            Err(error) => return Err(
+                eyre!("Unable to shutdown Bluetooth adapter")
+                    .with_section(move || error.to_string().header("Reason:")) 
+                )
+        };
+        adapter = match manager.up(&adapter) {
+            Ok(adapter) => adapter,
+            Err(error) => return Err(
+                eyre!("Unable to (re)start Bluetooth adapter")
+                    .with_section(move || error.to_string().header("Reason:")) 
                 )
         };
 
