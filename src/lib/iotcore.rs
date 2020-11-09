@@ -14,6 +14,8 @@ use crate::lib::jwt::IotCoreAuthToken;
 
 static READY_MESSAGE: &str = "{\"state\": \"RUNNING\"}";
 static STOP_MESSAGE: &str = "{\"state\": \"STOPPING\"}";
+static PAUSE_MESSAGE: &str = "{\"state\": \"PAUSED\"}";
+static SHUTDOWN_MESSAGE: &str = "{\"state\": \"SHUTDOWN\"}";
 
 #[derive(Debug,Deserialize, Clone)]
 pub enum CNCCommand {
@@ -176,13 +178,16 @@ impl IotCoreClient {
                                     CNCCommand::COLLECT => {
                                         self.collecting = true;
                                         info!("CNC command received: COLLECT beacons");
+                                        self.publish_message(self.state_topic.to_string(), READY_MESSAGE.as_bytes().to_vec())?;
                                     },
                                     CNCCommand::PAUSE => {
                                         self.collecting = false;
                                         warn!("CNC command received: PAUSE collecting beacons");
+                                        self.publish_message(self.state_topic.to_string(), PAUSE_MESSAGE.as_bytes().to_vec())?;
                                     },
                                     CNCCommand::SHUTDOWN => {
                                         warn!("CNC command received: SHUTDOWN software");
+                                        self.publish_message(self.state_topic.to_string(), SHUTDOWN_MESSAGE.as_bytes().to_vec())?;
                                         break;
                                     },
                                 };
