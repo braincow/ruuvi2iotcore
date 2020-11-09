@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Serialize, Deserialize};
 use std::path::Path;
 use std::time::Duration;
 use color_eyre::{eyre::eyre, SectionExt, Section, eyre::Report};
@@ -27,7 +27,7 @@ pub struct CNCCommandMessage {
     pub command: CNCCommand
 }
 
-#[derive(Debug,Deserialize)]
+#[derive(Debug,Deserialize,Serialize)]
 enum CollectMode {
     #[serde(rename = "blacklist")]
     BLACKLIST,
@@ -35,7 +35,7 @@ enum CollectMode {
     WHITELIST
 }
 
-#[derive(Debug,Deserialize)]
+#[derive(Debug,Deserialize,Serialize)]
 struct CollectConfig {
     mode: CollectMode,
     addresses: Vec<String>
@@ -50,7 +50,7 @@ pub struct IotCoreClient {
     jwt_factory: IotCoreAuthToken,
     events_topic: String,
     config_topic: String,
-    _state_topic: String,
+    state_topic: String,
     command_topic_root: String,
     consumer: Receiver<Option<mqtt::message::Message>>,
     collectconfig: Option<CollectConfig>,
@@ -153,6 +153,7 @@ impl IotCoreClient {
                                 }
                             };
                             info!("New collect config activated: {:?}", self.collectconfig);
+                            self.publish_message(self.state_topic.clone(), json!(&self.collectconfig).to_string().as_bytes().to_vec())?;
                         } else if msg.topic().starts_with(&self.command_topic_root) {
                             // command was sent into root or subfolder of command channel
                             // TODO: implement subfolder support
@@ -306,7 +307,7 @@ impl IotCoreClient {
             cnc_sender: cnc_s.clone(),
             events_topic: events_topic,
             config_topic: format!("/devices/{}/config", config.iotcore.device_id),
-            _state_topic: format!("/devices/{}/state", config.iotcore.device_id),
+            state_topic: format!("/devices/{}/state", config.iotcore.device_id),
             command_topic_root: format!("/devices/{}/commands", config.iotcore.device_id),
             consumer: consumer,
             collectconfig: None,
