@@ -12,11 +12,6 @@ use crate::lib::config::AppConfig;
 use crate::lib::scanner::RuuviBluetoothBeacon;
 use crate::lib::jwt::IotCoreAuthToken;
 
-static READY_MESSAGE: &str = "{\"state\": \"RUNNING\"}";
-static STOP_MESSAGE: &str = "{\"state\": \"STOPPING\"}";
-static PAUSE_MESSAGE: &str = "{\"state\": \"PAUSED\"}";
-static SHUTDOWN_MESSAGE: &str = "{\"state\": \"SHUTDOWN\"}";
-
 #[derive(Debug,Deserialize, Clone)]
 pub enum CNCCommand {
     #[serde(rename = "collect")]
@@ -138,8 +133,6 @@ impl IotCoreClient {
         }
         self.connect()?;
         
-        self.publish_message(self.state_topic.to_string(), READY_MESSAGE.as_bytes().to_vec())?; // if this fails our connection is dead anyway
-
         let mut message_queue: Vec<RuuviBluetoothBeacon> = Vec::new();
 
         // loop messages and wait for a ready signal
@@ -178,16 +171,13 @@ impl IotCoreClient {
                                     CNCCommand::COLLECT => {
                                         self.collecting = true;
                                         info!("CNC command received: COLLECT beacons");
-                                        self.publish_message(self.state_topic.to_string(), READY_MESSAGE.as_bytes().to_vec())?;
                                     },
                                     CNCCommand::PAUSE => {
                                         self.collecting = false;
                                         warn!("CNC command received: PAUSE collecting beacons");
-                                        self.publish_message(self.state_topic.to_string(), PAUSE_MESSAGE.as_bytes().to_vec())?;
                                     },
                                     CNCCommand::SHUTDOWN => {
                                         warn!("CNC command received: SHUTDOWN software");
-                                        self.publish_message(self.state_topic.to_string(), SHUTDOWN_MESSAGE.as_bytes().to_vec())?;
                                         break;
                                     },
                                 };
@@ -250,8 +240,6 @@ impl IotCoreClient {
             thread::sleep(time::Duration::from_millis(10));
         }
         
-        self.publish_message(self.state_topic.to_string(), STOP_MESSAGE.as_bytes().to_vec())?; // doesnt matter if we throw error here as we are gointo die anyway
-
         self.disconnect()?;
         
         Ok(())
