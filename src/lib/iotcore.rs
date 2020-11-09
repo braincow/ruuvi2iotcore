@@ -6,6 +6,7 @@ use crossbeam::channel;
 use paho_mqtt as mqtt;
 use std::{time, thread};
 use std::sync::mpsc::Receiver;
+use std::clone::Clone;
 
 use crate::lib::config::AppConfig;
 use crate::lib::scanner::RuuviBluetoothBeacon;
@@ -14,17 +15,19 @@ use crate::lib::jwt::IotCoreAuthToken;
 static READY_MESSAGE: &str = "{state: \"RUNNING\"}";
 static STOP_MESSAGE: &str = "{state: \"STOPPING\"}";
 
-#[derive(Debug,Deserialize)]
-enum CNCCommand {
+#[derive(Debug,Deserialize, Clone)]
+pub enum CNCCommand {
     #[serde(rename = "collect")]
     COLLECT,
     #[serde(rename = "pause")]
-    PAUSE
+    PAUSE,
+    #[serde(rename = "shutdown")]
+    SHUTDOWN
 }
 
-#[derive(Debug,Deserialize)]
-struct CNCCommandMessage {
-    command: CNCCommand
+#[derive(Debug,Deserialize, Clone)]
+pub struct CNCCommandMessage {
+    pub command: CNCCommand
 }
 
 #[derive(Debug,Deserialize)]
@@ -46,6 +49,7 @@ pub struct IotCoreClient {
     conn_opts: mqtt::ConnectOptions,
     client: mqtt::Client,
     channel_receiver: channel::Receiver<RuuviBluetoothBeacon>,
+    cnc_sender: channel::Sender<CNCCommandMessage>,
     jwt_factory: IotCoreAuthToken,
     events_topic: String,
     config_topic: String,
@@ -126,6 +130,10 @@ impl IotCoreClient {
 
     pub fn start_client(&mut self) -> Result<(), Report> {
 
+        // cycle connection state
+        if self.client.is_connected() {
+            self.disconnect()?;
+        }
         self.connect()?;
         
         self.publish_message(self.state_topic.to_string(), READY_MESSAGE.as_bytes().to_vec())?; // if this fails our connection is dead anyway
@@ -133,8 +141,7 @@ impl IotCoreClient {
         let mut message_queue: Vec<RuuviBluetoothBeacon> = Vec::new();
 
         // loop messages and wait for a ready signal
-        let running = true;
-        while running {
+        loop {
             // check into the subscriptions if there are any incoming cnc messages
             match self.consumer.try_recv() {
                 Ok(optmsg) => {
@@ -162,6 +169,9 @@ impl IotCoreClient {
                                 }
                             };
                             if let Some(command) = command {
+                                // also publish the command to CNC channel
+                                self.cnc_sender.send(command.clone()).unwrap(); // TODO: fix unwrap
+                                // react locally to the message as well
                                 match command.command {
                                     CNCCommand::COLLECT => {
                                         self.collecting = true;
@@ -170,8 +180,12 @@ impl IotCoreClient {
                                     CNCCommand::PAUSE => {
                                         self.collecting = false;
                                         warn!("CNC command received: PAUSE collecting beacons");
-                                    }
-                                };    
+                                    },
+                                    CNCCommand::SHUTDOWN => {
+                                        warn!("CNC command received: SHUTDOWN software");
+                                        break;
+                                    },
+                                };
                             }
                         } else {
                             warn!("Unimplemented CNC topic in received message.");
@@ -238,7 +252,7 @@ impl IotCoreClient {
         Ok(())
     }
 
-    pub fn build(config: &AppConfig, r: &channel::Receiver<RuuviBluetoothBeacon>) -> Result<IotCoreClient, Report> {
+    pub fn build(config: &AppConfig, r: &channel::Receiver<RuuviBluetoothBeacon>, cnc_s: &channel::Sender<CNCCommandMessage>) -> Result<IotCoreClient, Report> {
 
         let create_opts = mqtt::CreateOptionsBuilder::new()
             .client_id(config.iotcore.client_id())
@@ -296,6 +310,7 @@ impl IotCoreClient {
             client: cli,
             jwt_factory: jwt_factory,
             channel_receiver: r.clone(),
+            cnc_sender: cnc_s.clone(),
             events_topic: events_topic,
             config_topic: format!("/devices/{}/config", config.iotcore.device_id),
             state_topic: format!("/devices/{}/state", config.iotcore.device_id),

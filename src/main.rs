@@ -64,31 +64,33 @@ fn main() -> Result<(), Report> {
     // read configuration
     let config = AppConfig::read_config(Path::new(matches.value_of("config").unwrap()))?;
 
-    //let (mqtt_out, mqtt_in) = unbounded();
+    let (cnc_s, cnc_r) = unbounded();
     let (event_s, event_r) = unbounded();
-    let scanner = BluetoothScanner::build(&config, &event_s)?;
-    let mut iotcore = IotCoreClient::build(&config, &event_r)?;
+    let scanner = BluetoothScanner::build(&config, &event_s, &cnc_r)?;
+    let mut iotcore = IotCoreClient::build(&config, &event_r, &cnc_s)?;
 
     thread::scope(|scope| {
         // spawn the mqtt thread
         scope.spawn(move|_| {
             loop {
-                iotcore.start_client().unwrap();
-                warn!("Restarting iotcore client");
+                match iotcore.start_client() {
+                    Ok(_) => break,
+                    Err(error) => error!("Restarting iotcore client: {}", error)
+                };
             }
+            info!("Shutting down IotCore client thread.");
         });
 
         // spawn bt scan thread
         scope.spawn(move|_| {
             loop {
-                scanner.start_scanner().unwrap();
-                warn!("Restarting bluetooth scanner");
+                match scanner.start_scanner() {
+                    Ok(_) => break,
+                    Err(error) => error!("Restarting bluetooth scanner: {}", error)
+                };
             }
         });
     }).unwrap();
-
-    // nothing to do so print the usage and version information
-    println!("{}", matches.usage());
 
     // return with Ok (success)
     Ok(())
