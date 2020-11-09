@@ -27,7 +27,7 @@ pub struct CNCCommandMessage {
     pub command: CNCCommand
 }
 
-#[derive(Debug,Deserialize,Serialize)]
+#[derive(Debug,Deserialize,Serialize,Clone)]
 enum CollectMode {
     #[serde(rename = "blacklist")]
     BLACKLIST,
@@ -35,10 +35,15 @@ enum CollectMode {
     WHITELIST
 }
 
-#[derive(Debug,Deserialize,Serialize)]
+fn default_as_true() -> bool {
+    true
+}
+#[derive(Debug,Deserialize,Serialize,Clone)]
 struct CollectConfig {
     mode: CollectMode,
-    addresses: Vec<String>
+    addresses: Vec<String>,
+    #[serde(default="default_as_true")]
+    collecting: bool
 }
 
 pub struct IotCoreClient {
@@ -54,7 +59,6 @@ pub struct IotCoreClient {
     command_topic_root: String,
     consumer: Receiver<Option<mqtt::message::Message>>,
     collectconfig: Option<CollectConfig>,
-    collecting: bool,
     collection_size: usize
 }
 
@@ -125,6 +129,17 @@ impl IotCoreClient {
         Ok(())
     }
 
+    fn enable_collecting(&mut self, enabled: bool) -> Result<(), Report> {
+        if let Some(collectconfig) = &self.collectconfig {
+            let mut newconfig = collectconfig.clone();
+            newconfig.collecting = enabled;
+            self.collectconfig = Some(newconfig);
+            self.publish_message(self.state_topic.clone(), json!(&self.collectconfig).to_string().as_bytes().to_vec())?;
+        }
+
+        Ok(())
+    }
+
     pub fn start_client(&mut self) -> Result<(), Report> {
 
         // cycle connection state
@@ -170,12 +185,12 @@ impl IotCoreClient {
                                 // react locally to the message as well
                                 match command.command {
                                     CNCCommand::COLLECT => {
-                                        self.collecting = true;
                                         info!("CNC command received: COLLECT beacons");
+                                        self.enable_collecting(true)?;
                                     },
                                     CNCCommand::PAUSE => {
-                                        self.collecting = false;
                                         warn!("CNC command received: PAUSE collecting beacons");
+                                        self.enable_collecting(false)?;
                                     },
                                     CNCCommand::SHUTDOWN => {
                                         warn!("CNC command received: SHUTDOWN software");
@@ -218,8 +233,12 @@ impl IotCoreClient {
                         },
                         None => true
                     };
+                    let mut collect = false;
+                    if let Some(collectconfig) = &self.collectconfig {
+                        collect = collectconfig.collecting;
+                    }
                     // submit the beacon to iotcore
-                    if publish && self.collecting {
+                    if publish && collect {
                         if message_queue.len() >= self.collection_size {
                             match self.publish_message(self.events_topic.to_string(), json!(message_queue).to_string().as_bytes().to_vec()) {
                                 Ok(_) => trace!("iotcore publish: {:?}", message_queue),
@@ -311,7 +330,6 @@ impl IotCoreClient {
             command_topic_root: format!("/devices/{}/commands", config.iotcore.device_id),
             consumer: consumer,
             collectconfig: None,
-            collecting: true,
             collection_size: config.iotcore.collection_size()
         })
     }
