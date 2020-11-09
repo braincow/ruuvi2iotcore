@@ -7,6 +7,7 @@ use structview::View;
 use chrono;
 use serde::Serialize;
 use std::{time, thread};
+use rand::Rng;
 
 use crate::lib::config::AppConfig;
 use crate::lib::ruuvi::RuuviTagDataFormat5;
@@ -28,18 +29,37 @@ pub struct BluetoothScanner {
 
 impl BluetoothScanner {
     pub fn start_scanner(&self) -> Result<(), Report> {
-
-        // use only passive scan as we are interested in beacons only
-        self.bt_central.active(false);
-        match self.bt_central.start_scan() {
-            Ok(_) => {},
-            Err(error) => return Err(
-                eyre!("Unable to start Bluetooth scan")
-                    .with_section(move || error.to_string().header("Reason:")) 
-                )
-        };
+        let mut rng = rand::thread_rng(); // initialize random number generator for this start_scanner() run
+        let restart_number = rng.gen_range(1,100000); // used to determine random number that determines if we should try to restart the bluetooth scan
+        let mut initially_started = false;
 
         loop {
+            if rng.gen_range(1, 100000) == restart_number || !initially_started {
+                match self.bt_central.stop_scan() {
+                    Ok(_) => {
+                        if initially_started {
+                            warn!("Shutting down Bluetooth scan due to hacky fix to random deaths.")
+                        }
+                    },
+                    Err(error) => return Err(
+                        eyre!("Unable to stop Bluetooth scan")
+                            .with_section(move || error.to_string().header("Reason:")) 
+                        )
+                };
+                match self.bt_central.start_scan() {
+                    Ok(_) => {
+                        if initially_started {
+                            warn!("(Re)starting Bluetooth scan due to hacky fix to random deaths.")
+                        }
+                    },
+                    Err(error) => return Err(
+                        eyre!("Unable to start Bluetooth scan")
+                            .with_section(move || error.to_string().header("Reason:")) 
+                        )
+                };
+                initially_started = true;
+            }
+    
             // peek into cnc channel to receive commands from iotcore
             match self.cnc_receiver.try_recv() {
                 Ok(msg) => match msg.command {
@@ -168,6 +188,8 @@ impl BluetoothScanner {
                     .with_section(move || error.to_string().header("Reason:")) 
                 )
         };
+        // use only passive scan as we are interested in beacons only
+        central.active(false);
 
         let receiver = match central.event_receiver() {
             Some(receiver) => receiver,
