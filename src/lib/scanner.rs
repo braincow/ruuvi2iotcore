@@ -27,14 +27,16 @@ pub struct BluetoothScanner {
     cnc_receiver: channel::Receiver<CNCCommandMessage>
 }
 
+static RESTART_THRESHOLD:usize = 250000;
+
 impl BluetoothScanner {
     pub fn start_scanner(&self) -> Result<(), Report> {
         let mut rng = rand::thread_rng(); // initialize random number generator for this start_scanner() run
-        let restart_number = rng.gen_range(1,100000); // used to determine random number that determines if we should try to restart the bluetooth scan
+        let restart_number = rng.gen_range(1, RESTART_THRESHOLD); // used to determine random number that determines if we should try to restart the bluetooth scan
         let mut initially_started = false;
 
         loop {
-            if rng.gen_range(1, 100000) == restart_number || !initially_started {
+            if rng.gen_range(1, RESTART_THRESHOLD) == restart_number || !initially_started {
                 match self.bt_central.stop_scan() {
                     Ok(_) => {
                         if initially_started {
