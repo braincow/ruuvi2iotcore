@@ -239,9 +239,14 @@ impl IotCoreClient {
                     }
                     // submit the beacon to iotcore
                     if publish && collect {
-                        if message_queue.len() >= self.collection_size {
+                        if self.collection_size <= 1 {
+                            match self.publish_message(self.events_topic.to_string(), json!(msg).to_string().as_bytes().to_vec()) {
+                                Ok(_) => trace!("iotcore publish message: {:?}", message_queue),
+                                Err(error) => error!("Error on publishing message to MQTT: '{}'. Will retry.", error)
+                            };
+                        } else if message_queue.len() >= self.collection_size {
                             match self.publish_message(self.events_topic.to_string(), json!(message_queue).to_string().as_bytes().to_vec()) {
-                                Ok(_) => trace!("iotcore publish: {:?}", message_queue),
+                                Ok(_) => trace!("iotcore publish message queue: {:?}", message_queue),
                                 Err(error) => error!("Error on publishing message queue to MQTT: '{}'. Will retry.", error)
                             };
                             message_queue = Vec::new();
