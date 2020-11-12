@@ -99,10 +99,16 @@ impl IotCoreClient {
         warn!("Disconnecting from MQTT broker");
         match self.client.disconnect(None) {
             Ok(_) => Ok(()),
-            Err(error) => Err(
-                eyre!("Error while disconnecting MQTT broker")
-                    .with_section(move || error.to_string().header("Reason:"))
-                )
+            Err(error) => {
+                if self.client.is_connected() {
+                    Err(eyre!("Error while disconnecting MQTT broker")
+                        .with_section(move || error.to_string().header("Reason:"))
+                    )
+                } else {
+                    warn!("There was an error while disconnecting MQTT broker, but we are apparently disconnected anyway.");
+                    Ok(())
+                }
+            }
         }
     }
 
