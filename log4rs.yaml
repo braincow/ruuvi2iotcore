@@ -6,7 +6,12 @@ appenders:
   console:
     kind: console
 
-  # An appender named "file" that writes to a file with a custom pattern encoder
+  # logfiles
+  ruuvilog:
+    kind: file
+    path: "log/ruuvi2iotcore.log"
+    encoder:
+      pattern: "{d} - {m}{n}"
   btlepluglog:
     kind: file
     path: "log/btleplug.log"
@@ -23,13 +28,19 @@ appenders:
     encoder:
       pattern: "{d} - {m}{n}"
 
-# Set the default logging level to "warn" and attach the "stdout" appender to the root
+# Set the default logging level to "info" and attach the "stdout" appender to the root
 root:
   level: info
   appenders:
     - console
 
 loggers:
+  ruuvi2iotcore:
+    level: info
+    appenders:
+      - ruuvilog
+    additive: true
+
   # Route log events sent to the "btleplug::bluez::adapter" logger to the "file" appender,
   # and *not* the normal appenders installed at the root
   btleplug::bluez::adapter:
