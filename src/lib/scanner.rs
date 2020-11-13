@@ -109,7 +109,7 @@ impl BluetoothScanner {
                 match self.bt_central.as_ref().unwrap().stop_scan() {
                     Ok(_) => {
                         if initially_started {
-                            warn!("Shutting down Bluetooth scan due to hacky fix to random deaths.")
+                            debug!("Shutting down Bluetooth scan due to hacky fix to random deaths.")
                         }
                     },
                     Err(error) => return Err(
@@ -120,7 +120,7 @@ impl BluetoothScanner {
                 match self.bt_central.as_ref().unwrap().start_scan() {
                     Ok(_) => {
                         if initially_started {
-                            warn!("(Re)starting Bluetooth scan due to hacky fix to random deaths.")
+                            debug!("(Re)starting Bluetooth scan due to hacky fix to random deaths.")
                         }
                         initially_started = true;
                         then = time::SystemTime::now();
