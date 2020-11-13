@@ -22,24 +22,59 @@ impl IdentityConfig {
         self.token_lifetime.unwrap()
     }
 
-    fn get_cn_of_cert(&self) -> Result<String, Report> {
-        let cert_data = fs::read(Path::new(&self.public_key)).unwrap();
+    fn get_subject(&self) -> Result<Email, Report> {
+        let cert_data = match fs::read(Path::new(&self.public_key)) {
+            Ok(cert_data) => cert_data,
+            Err(error) => return Err(
+                eyre!("Unable to read certificate file")
+                    .with_section(move || self.public_key.to_string().header("File name:"))
+                    .with_section(move || error.to_string().header("Reason:"))
+                )
+        };
         let reader = Cursor::new(cert_data);
-        let (pem, _bytes_read) = Pem::read(reader).expect("Reading PEM failed");
-        let x509 = pem.parse_x509().expect("X.509: decoding DER failed");
+        let (pem, _bytes_read) = match Pem::read(reader) {
+            Ok(data) => data,
+            Err(error) => return Err(
+                eyre!("Unable to parse certificate file")
+                    .with_section(move || self.public_key.to_string().header("File name:"))
+                    .with_section(move || error.to_string().header("Reason:"))
+                )
+        };
+        let x509 = match pem.parse_x509() {
+            Ok(data) => data,
+            Err(error) => return Err(
+                eyre!("Unable to parse PEM certificate to DER internally")
+                    .with_section(move || self.public_key.to_string().header("File name:"))
+                    .with_section(move || error.to_string().header("Reason:"))
+                )
+        };
 
-        let cn = x509.tbs_certificate.subject.iter_common_name().next().and_then(|cn| cn.as_str().ok()).unwrap();
-        Ok(cn.to_string())
+        let subject: Email;
+        if let Some(cn) = x509.tbs_certificate.subject.iter_common_name().next().and_then(|cn| cn.as_str().ok()) {
+            subject = match cn.parse() {
+                Ok(subject)=>subject,
+                Err(error) => return Err(
+                    eyre!("Unable to parse certificate Common Name field as email address.")
+                        .with_section(move || self.public_key.to_string().header("File name:"))
+                        .with_section(move || error.to_string().header("Reason:"))
+                    )
+            };
+        } else {
+            return Err(
+                eyre!("No Common Name field found in the certificate.")
+                    .with_section(move || self.public_key.to_string().header("File name:"))
+                )
+        };
+
+        Ok(subject)
     }
 
     pub fn device_id(&self) -> Result<String, Report> {
-        let subject: Email = self.get_cn_of_cert()?.parse().unwrap();
-        Ok(subject.user().to_string())
+        Ok(self.get_subject()?.user().to_string())
     }
 
     pub fn domain(&self) -> Result<String, Report> {
-        let subject: Email = self.get_cn_of_cert()?.parse().unwrap();
-        Ok(subject.host().to_string())
+        Ok(self.get_subject()?.host().to_string())
     }
 }
 
