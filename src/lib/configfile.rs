@@ -1,6 +1,9 @@
 use std::{fs, path::Path};
 use serde::{Serialize, Deserialize};
 use color_eyre::{eyre::eyre, SectionExt, Section, eyre::Report};
+use std::io::Cursor;
+use x509_parser::pem::Pem;
+use addr::Email;
 
 #[derive(Debug,Deserialize,Serialize)]
 pub struct IdentityConfig {
@@ -18,56 +21,31 @@ impl IdentityConfig {
 
         self.token_lifetime.unwrap()
     }
-}
 
-#[derive(Debug,Deserialize,Serialize)]
-pub struct BluetoothConfig {
-    adapter: Option<usize>,
-}
+    fn get_cn_of_cert(&self) -> Result<String, Report> {
+        let cert_data = fs::read(Path::new(&self.public_key)).unwrap();
+        let reader = Cursor::new(cert_data);
+        let (pem, _bytes_read) = Pem::read(reader).expect("Reading PEM failed");
+        let x509 = pem.parse_x509().expect("X.509: decoding DER failed");
 
-impl BluetoothConfig {
-    pub fn adapter_index(&self) -> usize {
-        if self.adapter.is_some() {
-            return self.adapter.unwrap()
-        }
-        // default value will be 0
-        0
-    }
-}
-
-#[derive(Debug,Deserialize,Serialize)]
-pub struct IotCoreConfig {
-    pub project_id: String,
-    region: String,
-    pub registry: String,
-    pub device_id: String,
-    pub event_subfolder: Option<String>,
-    pub collection_size: Option<usize>
-}
-
-impl IotCoreConfig {
-    pub fn collection_size(&self) -> usize {
-        match self.collection_size {
-            Some(size) => size,
-            None => 0
-        }
+        let cn = x509.tbs_certificate.subject.iter_common_name().next().and_then(|cn| cn.as_str().ok()).unwrap();
+        Ok(cn.to_string())
     }
 
-    pub fn client_id(&self) -> String {
-        let client_id = format!("projects/{}/locations/{}/registries/{}/devices/{}",
-            self.project_id,
-            self.region,
-            self.registry,
-            self.device_id);
-        client_id
+    pub fn device_id(&self) -> Result<String, Report> {
+        let subject: Email = self.get_cn_of_cert()?.parse().unwrap();
+        Ok(subject.user().to_string())
+    }
+
+    pub fn domain(&self) -> Result<String, Report> {
+        let subject: Email = self.get_cn_of_cert()?.parse().unwrap();
+        Ok(subject.host().to_string())
     }
 }
 
 #[derive(Debug,Deserialize,Serialize)]
 pub struct AppConfig {
-    pub identity: IdentityConfig,
-    pub bluetooth: BluetoothConfig,
-    pub iotcore: IotCoreConfig
+    pub identity: IdentityConfig
 }
 
 impl AppConfig {

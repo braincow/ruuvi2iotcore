@@ -1,19 +1,9 @@
 [identity]
 # openssl req -x509 -sha256 -nodes -days 365 -newkey rsa:2048 -keyout test.key -out test.crt
+#  common name MUST BE device-id@auto.detect.domain.tld
 public_key = "test.crt"
 private_key = "test.key"
 ca_certs = "roots.pem"
 token_lifetime = 3600
-
-[bluetooth]
-adapter = 0
-
-[iotcore]
-project_id = "bcow-me"
-region = "europe-west1"
-registry = "ruuvi2iotcore"
-device_id = "dev"
-event_subfolder = "dev"
-collection_size = 10
 
 # eof

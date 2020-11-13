@@ -8,9 +8,16 @@ use std::{time, thread};
 use std::sync::mpsc::Receiver;
 use std::clone::Clone;
 
-use crate::lib::config::AppConfig;
+use crate::lib::configfile::AppConfig;
+use crate::lib::dnsconfig::IotCoreConfig;
 use crate::lib::scanner::RuuviBluetoothBeacon;
 use crate::lib::jwt::IotCoreAuthToken;
+
+#[derive(Debug,Clone)]
+pub enum IOTCoreCNCMessageKind {
+    COMMAND(Option<CNCCommandMessage>),
+    CONFIG(Option<CollectConfig>)
+}
 
 #[derive(Debug,Deserialize, Clone)]
 pub enum CNCCommand {
@@ -35,31 +42,43 @@ enum CollectMode {
     WHITELIST
 }
 
-fn default_as_true() -> bool {
-    true
-}
 #[derive(Debug,Deserialize,Serialize,Clone)]
-struct CollectConfig {
+pub struct BluetoothConfig {
+    pub adapter_index: usize
+}
+
+#[derive(Debug,Deserialize,Serialize,Clone)]
+pub struct CollectConfig {
     mode: CollectMode,
     addresses: Vec<String>,
-    #[serde(default="default_as_true")]
-    collecting: bool
+    collecting: bool,
+    event_subfolder: Option<String>,
+    collection_size: Option<usize>,
+    pub bluetooth: BluetoothConfig
+}
+impl CollectConfig {
+    pub fn collection_size(&self) -> usize {
+        match self.collection_size {
+            Some(size) => size,
+            None => 0
+        }
+    }
 }
 
 pub struct IotCoreClient {
+    device_id: String,
     ssl_opts: mqtt::SslOptions,
     conn_opts: mqtt::ConnectOptions,
     client: mqtt::Client,
     channel_receiver: channel::Receiver<RuuviBluetoothBeacon>,
-    cnc_sender: channel::Sender<CNCCommandMessage>,
+    cnc_sender: channel::Sender<IOTCoreCNCMessageKind>,
     jwt_factory: IotCoreAuthToken,
-    events_topic: String,
+    events_topic: Option<String>,
     config_topic: String,
     state_topic: String,
     command_topic_root: String,
     consumer: Receiver<Option<mqtt::message::Message>>,
     collectconfig: Option<CollectConfig>,
-    collection_size: usize
 }
 
 impl IotCoreClient {
@@ -173,8 +192,18 @@ impl IotCoreClient {
                                     None
                                 }
                             };
+                            if self.collectconfig.is_some() {
+                                let events_topic = match &self.collectconfig.as_ref().unwrap().event_subfolder {
+                                    Some(subfolder) => format!("/devices/{}/events/{}", self.device_id, subfolder),
+                                    None => format!("/devices/{}/events", self.device_id)
+                                };
+                                self.events_topic = Some(events_topic);
+                            }
                             info!("New collect config activated: {:?}", self.collectconfig);
+                            // send new state back after activating the configuration
                             self.publish_message(self.state_topic.clone(), json!(&self.collectconfig).to_string().as_bytes().to_vec())?;
+                            // send config to CNC channel
+                            self.cnc_sender.send(IOTCoreCNCMessageKind::CONFIG(self.collectconfig.clone())).unwrap(); // TODO: fix unwrap
                         } else if msg.topic().starts_with(&self.command_topic_root) {
                             // command was sent into root or subfolder of command channel
                             // TODO: implement subfolder support
@@ -185,9 +214,9 @@ impl IotCoreClient {
                                     None
                                 }
                             };
+                            // also publish the command to CNC channel
+                            self.cnc_sender.send(IOTCoreCNCMessageKind::COMMAND(command.clone())).unwrap(); // TODO: fix unwrap
                             if let Some(command) = command {
-                                // also publish the command to CNC channel
-                                self.cnc_sender.send(command.clone()).unwrap(); // TODO: fix unwrap
                                 // react locally to the message as well
                                 match command.command {
                                     CNCCommand::COLLECT => {
@@ -244,14 +273,14 @@ impl IotCoreClient {
                         collect = collectconfig.collecting;
                     }
                     // submit the beacon to iotcore
-                    if publish && collect {
-                        if self.collection_size <= 1 {
-                            match self.publish_message(self.events_topic.to_string(), json!(msg).to_string().as_bytes().to_vec()) {
+                    if publish && collect && self.collectconfig.is_some() {
+                        if &self.collectconfig.as_ref().unwrap().collection_size() <= &1 {
+                            match self.publish_message(self.events_topic.as_ref().unwrap().to_string(), json!(msg).to_string().as_bytes().to_vec()) {
                                 Ok(_) => trace!("iotcore publish message: {:?}", message_queue),
                                 Err(error) => error!("Error on publishing message to MQTT: '{}'. Will retry.", error)
                             };
-                        } else if message_queue.len() >= self.collection_size {
-                            match self.publish_message(self.events_topic.to_string(), json!(message_queue).to_string().as_bytes().to_vec()) {
+                        } else if message_queue.len() >= self.collectconfig.as_ref().unwrap().collection_size() {
+                            match self.publish_message(self.events_topic.as_ref().unwrap().to_string(), json!(message_queue).to_string().as_bytes().to_vec()) {
                                 Ok(_) => trace!("iotcore publish message queue: {:?}", message_queue),
                                 Err(error) => error!("Error on publishing message queue to MQTT: '{}'. Will retry.", error)
                             };
@@ -260,7 +289,7 @@ impl IotCoreClient {
                             message_queue.push(msg);
                         }
                     }
-                    trace!("Message queue size: {}/{}", message_queue.len(), self.collection_size);
+                    trace!("Message queue size: {}/{}", message_queue.len(), self.collectconfig.as_ref().unwrap().collection_size());
                 },
                 Err(error) => {
                     trace!("No bluetooth beacon in channel: {}", error);
@@ -276,10 +305,10 @@ impl IotCoreClient {
         Ok(())
     }
 
-    pub fn build(config: &AppConfig, r: &channel::Receiver<RuuviBluetoothBeacon>, cnc_s: &channel::Sender<CNCCommandMessage>) -> Result<IotCoreClient, Report> {
+    pub fn build(appconfig: &AppConfig, iotconfig: &IotCoreConfig, r: &channel::Receiver<RuuviBluetoothBeacon>, cnc_s: &channel::Sender<IOTCoreCNCMessageKind>) -> Result<IotCoreClient, Report> {
 
         let create_opts = mqtt::CreateOptionsBuilder::new()
-            .client_id(config.iotcore.client_id())
+            .client_id(iotconfig.client_id())
             .mqtt_version(mqtt::types::MQTT_VERSION_3_1_1)
             .server_uri("ssl://mqtt.googleapis.com:8883")
             .persistence(mqtt::PersistenceType::None)
@@ -296,7 +325,7 @@ impl IotCoreClient {
 
         let ssl_options = match mqtt::SslOptionsBuilder::new()
             .ssl_version(mqtt::SslVersion::Tls_1_2)
-            .trust_store(Path::new(&config.identity.ca_certs).to_path_buf()) {
+            .trust_store(Path::new(&appconfig.identity.ca_certs).to_path_buf()) {
                 Ok(options) => options.finalize(),
                 Err(error) => return Err(
                     eyre!("Unable to instantiate Paho MQTT clients SSL options")
@@ -304,7 +333,7 @@ impl IotCoreClient {
                     )
             };
 
-        let jwt_factory = IotCoreAuthToken::build(config);
+        let jwt_factory = IotCoreAuthToken::build(appconfig, iotconfig);
         let jwt_token = match jwt_factory.issue_new() {
             Ok(token) => token,
             Err(error) => return Err(
@@ -322,26 +351,22 @@ impl IotCoreClient {
         // thru mspc relay incoming messages from cnc topics
         let consumer = cli.start_consuming();
 
-        // if we have subfolder defined for our telemetry use that in the events topic name
-        let events_topic = match &config.iotcore.event_subfolder {
-            Some(subfolder) => format!("/devices/{}/events/{}", config.iotcore.device_id, subfolder),
-            None => format!("/devices/{}/events", config.iotcore.device_id)
-        };
+        let device_id = appconfig.identity.device_id()?;
 
         Ok(IotCoreClient {
+            device_id: device_id.clone(),
             ssl_opts: ssl_options,
             conn_opts: conn_opts,
             client: cli,
             jwt_factory: jwt_factory,
             channel_receiver: r.clone(),
             cnc_sender: cnc_s.clone(),
-            events_topic: events_topic,
-            config_topic: format!("/devices/{}/config", config.iotcore.device_id),
-            state_topic: format!("/devices/{}/state", config.iotcore.device_id),
-            command_topic_root: format!("/devices/{}/commands", config.iotcore.device_id),
+            events_topic: None,
+            config_topic: format!("/devices/{}/config", device_id),
+            state_topic: format!("/devices/{}/state", device_id),
+            command_topic_root: format!("/devices/{}/commands", device_id),
             consumer: consumer,
             collectconfig: None,
-            collection_size: config.iotcore.collection_size()
         })
     }
 }

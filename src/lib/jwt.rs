@@ -5,7 +5,8 @@ use frank_jwt::{Algorithm, encode};
 use serde::Serialize;
 use color_eyre::{eyre::eyre, SectionExt, Section, eyre::Report};
 
-use crate::lib::config::AppConfig;
+use crate::lib::configfile::AppConfig;
+use crate::lib::dnsconfig::IotCoreConfig;
 
 #[derive(Debug, Serialize)]
 pub struct JWTHeaders;
@@ -39,13 +40,13 @@ pub struct IotCoreAuthToken {
 }
 
 impl IotCoreAuthToken {
-    pub fn build(config: &AppConfig) -> IotCoreAuthToken {
+    pub fn build(appconfig: &AppConfig, iotconfig: &IotCoreConfig) -> IotCoreAuthToken {
         IotCoreAuthToken {
             headers: JWTHeaders,
-            payload: JWTPayload::new(&config.iotcore.project_id, &config.identity.token_lifetime()),
-            private_key: Path::new(&config.identity.private_key).to_path_buf(),
-            audience: config.iotcore.project_id.clone(),
-            lifetime: config.identity.token_lifetime()
+            payload: JWTPayload::new(&iotconfig.project_id, &appconfig.identity.token_lifetime()),
+            private_key: Path::new(&appconfig.identity.private_key).to_path_buf(),
+            audience: iotconfig.project_id.clone(),
+            lifetime: appconfig.identity.token_lifetime()
         }
     }
 
