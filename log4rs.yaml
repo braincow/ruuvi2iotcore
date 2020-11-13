@@ -5,28 +5,26 @@ appenders:
   # An appender named "stdout" that writes to stdout
   console:
     kind: console
+    # custom encoders can be used to achieve less/more verbose output to logfiles
+    #encoder:
+    #  pattern: "{d} - {m}{n}"
 
   # logfiles
   ruuvilog:
     kind: file
     path: "log/ruuvi2iotcore.log"
-    encoder:
-      pattern: "{d} - {m}{n}"
+    # custom encoders can be used to achieve less/more verbose output to logfiles
+    #encoder:
+    #  pattern: "{d} - {m}{n}"
   btlepluglog:
     kind: file
     path: "log/btleplug.log"
-    encoder:
-      pattern: "{d} - {m}{n}"
   iotcorelog:
     kind: file
     path: "log/iotcore.log"
-    encoder:
-      pattern: "{d} - {m}{n}"
   scannerlog:
     kind: file
     path: "log/scanner.log"
-    encoder:
-      pattern: "{d} - {m}{n}"
 
 # Set the default logging level to "info" and attach the "stdout" appender to the root
 root:
