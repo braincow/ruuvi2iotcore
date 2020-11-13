@@ -1,0 +1,53 @@
+# Scan this file for changes every 30 seconds
+refresh_rate: 30 seconds
+
+appenders:
+  # An appender named "stdout" that writes to stdout
+  console:
+    kind: console
+
+  # An appender named "file" that writes to a file with a custom pattern encoder
+  btlepluglog:
+    kind: file
+    path: "log/btleplug.log"
+    encoder:
+      pattern: "{d} - {m}{n}"
+  iotcorelog:
+    kind: file
+    path: "log/iotcore.log"
+    encoder:
+      pattern: "{d} - {m}{n}"
+  scannerlog:
+    kind: file
+    path: "log/scanner.log"
+    encoder:
+      pattern: "{d} - {m}{n}"
+
+# Set the default logging level to "warn" and attach the "stdout" appender to the root
+root:
+  level: info
+  appenders:
+    - console
+
+loggers:
+  # Route log events sent to the "btleplug::bluez::adapter" logger to the "file" appender,
+  # and *not* the normal appenders installed at the root
+  btleplug::bluez::adapter:
+    level: info
+    appenders:
+      - btlepluglog
+    additive: false
+
+  ruuvi2iotcore::lib::iotcore:
+    level: info
+    appenders:
+      - iotcorelog
+    additive: false
+
+  ruuvi2iotcore::lib::scanner:
+    level: info
+    appenders:
+      - scannerlog
+    additive: false
+
+# eof
