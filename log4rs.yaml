@@ -36,7 +36,7 @@ root:
 
 loggers:
   ruuvi2iotcore:
-    level: info
+    level: debug
     appenders:
       - ruuvilog
     additive: true
@@ -50,15 +50,15 @@ loggers:
     additive: false
 
   ruuvi2iotcore::lib::iotcore:
-    level: info
+    level: debug
     appenders:
       - iotcorelog
-    additive: false
+    additive: true
 
   ruuvi2iotcore::lib::scanner:
-    level: info
+    level: debug
     appenders:
       - scannerlog
-    additive: false
+    additive: true
 
 # eof
