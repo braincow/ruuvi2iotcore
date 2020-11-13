@@ -198,12 +198,12 @@ impl IotCoreClient {
                                     None => format!("/devices/{}/events", self.device_id)
                                 };
                                 self.events_topic = Some(events_topic);
+                                // send new state back after activating the configuration
+                                self.publish_message(self.state_topic.clone(), json!(&self.collectconfig).to_string().as_bytes().to_vec())?;
+                                // send config to CNC channel
+                                self.cnc_sender.send(IOTCoreCNCMessageKind::CONFIG(self.collectconfig.clone())).unwrap(); // TODO: fix unwrap    
+                                debug!("New collect config activated: {:?}", self.collectconfig);
                             }
-                            debug!("New collect config activated: {:?}", self.collectconfig);
-                            // send new state back after activating the configuration
-                            self.publish_message(self.state_topic.clone(), json!(&self.collectconfig).to_string().as_bytes().to_vec())?;
-                            // send config to CNC channel
-                            self.cnc_sender.send(IOTCoreCNCMessageKind::CONFIG(self.collectconfig.clone())).unwrap(); // TODO: fix unwrap
                         } else if msg.topic().starts_with(&self.command_topic_root) {
                             // command was sent into root or subfolder of command channel
                             // TODO: implement subfolder support
