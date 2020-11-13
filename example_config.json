@@ -1,0 +1,12 @@
+{
+    "addresses": [
+        "AA:BB:CC:DD:EE:FF"
+    ],
+    "collecting": true,
+    "mode":"blacklist",
+    "event_subfolder": "dev",
+    "collection_size": 10,
+    "bluetooth": {
+        "adapter_index": 0
+    }
+}
