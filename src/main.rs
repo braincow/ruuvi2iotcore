@@ -6,7 +6,7 @@ mod lib;
 use std::path::Path;
 use std::env;
 use clap::{App, Arg};
-use color_eyre::eyre::{Report, Result};
+use color_eyre::{eyre::eyre, SectionExt, Section, eyre::Report};
 use dotenv::dotenv;
 use directories::ProjectDirs;
 use crossbeam::thread;
@@ -58,7 +58,14 @@ fn main() -> Result<(), Report> {
     // read logging configuration (if present)
     if matches.is_present("logging") {
         let logging_config_path = Path::new(matches.value_of("logging").unwrap());
-        log4rs::init_file(logging_config_path, Default::default()).unwrap();
+        match log4rs::init_file(logging_config_path, Default::default()) {
+            Ok(_) => {},
+            Err(error) => return Err(
+                eyre!("Unable to start logging")
+                    .with_section(move || logging_config_path.to_string_lossy().trim().to_string().header("Config file name:"))
+                    .with_section(move || error.to_string().header("Reason:"))
+                )
+        };
     }
     info!("Starting {} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
 
