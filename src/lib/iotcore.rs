@@ -199,7 +199,7 @@ impl IotCoreClient {
                                 };
                                 self.events_topic = Some(events_topic);
                             }
-                            info!("New collect config activated: {:?}", self.collectconfig);
+                            debug!("New collect config activated: {:?}", self.collectconfig);
                             // send new state back after activating the configuration
                             self.publish_message(self.state_topic.clone(), json!(&self.collectconfig).to_string().as_bytes().to_vec())?;
                             // send config to CNC channel
