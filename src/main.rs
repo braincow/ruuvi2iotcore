@@ -6,7 +6,7 @@ mod lib;
 use std::path::Path;
 use std::env;
 use clap::{App, Arg};
-use color_eyre::eyre::{Report, Result};
+use color_eyre::{eyre::eyre, SectionExt, Section, eyre::Report};
 use dotenv::dotenv;
 use directories::ProjectDirs;
 use crossbeam::thread;
@@ -27,12 +27,19 @@ fn main() -> Result<(), Report> {
     // project dirs are located somewhere in the system based on arch and os
     let project_dirs = ProjectDirs::from("me", "bcow", env!("CARGO_PKG_NAME")).unwrap();
     let default_config_file_path = Path::new(project_dirs.config_dir()).join(format!("{}.toml", env!("CARGO_PKG_NAME")));
+    let default_working_dir_path = Path::new(project_dirs.data_dir());
 
     // initialize Clap (Command line argument parser)
     let matches = App::new(env!("CARGO_PKG_NAME")) // get the application name from package name
         .version(env!("CARGO_PKG_VERSION")) // read the version string from cargo.toml
         .author(env!("CARGO_PKG_AUTHORS")) // and for the author(s) information as well
         .about(env!("CARGO_PKG_DESCRIPTION")) // do the same for about, read it from env (cargo.toml)
+            .arg(Arg::with_name("workdir") // working directory default
+                .long("workdir")
+                .short("w")
+                .help("Specify alternate location of working directory.")
+                .default_value(default_working_dir_path.to_str().unwrap())
+                .global(true))
             .arg(Arg::with_name("config") // define config file path and as a default use the autodetected one.
                 .long("config")
                 .short("c")
@@ -47,6 +54,17 @@ fn main() -> Result<(), Report> {
                 .global(true))
         // from App instance parse all matches to determine selected commandline arguments and options
         .get_matches();
+
+    // change working directory to configured path
+    let working_dir_path = Path::new(matches.value_of("workdir").unwrap());
+    match env::set_current_dir(working_dir_path) {
+        Ok(_) => {},
+        Err(error) => return Err(
+            eyre!("Unable to change working directory")
+                .with_section(move || working_dir_path.to_string_lossy().trim().to_string().header("Directory name:"))
+                .with_section(move || error.to_string().header("Reason:"))
+            )
+    }
 
     // if there are environment variable(s) set for rust log
     //  overwrite them here since command line arguments have higher priority
