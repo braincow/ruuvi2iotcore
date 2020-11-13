@@ -27,6 +27,7 @@ fn main() -> Result<(), Report> {
     // project dirs are located somewhere in the system based on arch and os
     let project_dirs = ProjectDirs::from("me", "bcow", env!("CARGO_PKG_NAME")).unwrap();
     let default_config_file_path = Path::new(project_dirs.config_dir()).join(format!("{}.toml", env!("CARGO_PKG_NAME")));
+    let default_logging_config_file_path = Path::new(project_dirs.config_dir()).join("log4rs.yaml");
     let default_working_dir_path = Path::new(project_dirs.data_dir());
 
     // initialize Clap (Command line argument parser)
@@ -46,11 +47,17 @@ fn main() -> Result<(), Report> {
                 .help("Specify alternate config file location.")
                 .default_value(default_config_file_path.to_str().unwrap())
                 .global(true))
-            .arg(Arg::with_name("verbose") // define verbosity flag
-                .long("verbose")
-                .short("v")
-                .multiple(true)
-                .help("Sets the level of verbosity. Specifying multiple flags increases verbosity.")
+            .arg(Arg::with_name("logging") // define logconfig file path and as a default use the autodetected one.
+                .long("log")
+                .short("l")
+                .help("Specify alternate logging config file location.")
+                .default_value(default_logging_config_file_path.to_str().unwrap())
+                .global(true))
+            .arg(Arg::with_name("nologging") // define logconfig file path and as a default use the autodetected one.
+                .long("no-log")
+                .short("n")
+                .help("Disable logging.")
+                .conflicts_with("logging")
                 .global(true))
         // from App instance parse all matches to determine selected commandline arguments and options
         .get_matches();
@@ -66,17 +73,18 @@ fn main() -> Result<(), Report> {
             )
     }
 
-    // if there are environment variable(s) set for rust log
-    //  overwrite them here since command line arguments have higher priority
-    match matches.occurrences_of("verbose") {
-        0 => env::set_var("RUST_LOG", "error"),
-        1 => env::set_var("RUST_LOG", "warn"),
-        2 => env::set_var("RUST_LOG", "info"),
-        3 => env::set_var("RUST_LOG", "debug"),
-        _ => env::set_var("RUST_LOG", "trace")
+    // read logging configuration (if present)
+    if matches.is_present("logging") {
+        let logging_config_path = Path::new(matches.value_of("logging").unwrap());
+        match log4rs::init_file(logging_config_path, Default::default()) {
+            Ok(_) => {},
+            Err(error) => return Err(
+                eyre!("Unable to start logging")
+                    .with_section(move || logging_config_path.to_string_lossy().trim().to_string().header("Config file name:"))
+                    .with_section(move || error.to_string().header("Reason:"))
+                )
+        };
     }
-    // initialize logger
-    pretty_env_logger::try_init_timed().unwrap();
     info!("Starting {} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
 
     // read configuration
@@ -110,6 +118,7 @@ fn main() -> Result<(), Report> {
         });
     }).unwrap();
 
+    info!("Shutting down {}", env!("CARGO_PKG_NAME"));
     // return with Ok (success)
     Ok(())
 }
