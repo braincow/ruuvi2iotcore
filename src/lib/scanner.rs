@@ -23,11 +23,17 @@ pub struct BluetoothScanner {
     bt_central: Option<ConnectedAdapter>,
     bt_receiver: Option<Receiver<CentralEvent>>,
     channel_sender: channel::Sender<RuuviBluetoothBeacon>,
-    cnc_receiver: channel::Receiver<IOTCoreCNCMessageKind>
+    cnc_receiver: channel::Receiver<IOTCoreCNCMessageKind>,
+    adapter_index: Option<usize>
 }
 
 impl BluetoothScanner {
-    fn reserve_adapter(&mut self, adapter_index: usize) -> Result<(), Report> {
+    fn reserve_adapter(&mut self) -> Result<(), Report> {
+        if self.adapter_index.is_none() {
+            return Err(eyre!("No adapter_index setup for reserving adapter"));
+        }
+        let adapter_index = self.adapter_index.unwrap();
+
         let adapters = match self.bt_manager.adapters() {
             Ok(adapters) => adapters,
             Err(error) => return Err(
@@ -102,6 +108,12 @@ impl BluetoothScanner {
     }
 
     pub fn start_scanner(&mut self) -> Result<(), Report> {
+        if self.adapter_index.is_some() {
+            // i am perhaps restarting from main loop as I got here and I have some adapter index
+            // already configured
+            self.release_adapter()?;
+            self.reserve_adapter()?;
+        }
         let mut then = time::SystemTime::now();
         let mut initially_started = false;
         loop {
@@ -148,7 +160,8 @@ impl BluetoothScanner {
                     IOTCoreCNCMessageKind::CONFIG(collectconfig) => match collectconfig {
                         Some(collectconfig) => {
                             self.release_adapter()?;
-                            self.reserve_adapter(collectconfig.bluetooth.adapter_index)?;
+                            self.adapter_index = Some(collectconfig.bluetooth.adapter_index);
+                            self.reserve_adapter()?;
                         },
                         None => debug!("Empty collect config received from CNC channel")
                     }
@@ -230,6 +243,7 @@ impl BluetoothScanner {
         };
 
         Ok(BluetoothScanner {
+            adapter_index: None,
             bt_manager: manager,
             bt_central: None,
             bt_receiver: None,
