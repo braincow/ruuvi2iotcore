@@ -124,7 +124,7 @@ impl IotCoreClient {
                         .with_section(move || error.to_string().header("Reason:"))
                     )
                 } else {
-                    warn!("There was an error while disconnecting MQTT broker, but we are apparently disconnected anyway.");
+                    warn!("There was an error while disconnecting MQTT broker, but we are apparently disconnected anyway: {}", error);
                     Ok(())
                 }
             }
