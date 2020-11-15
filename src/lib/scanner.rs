@@ -87,6 +87,15 @@ impl BluetoothScanner {
         };
         self.bt_receiver = Some(receiver);
 
+        match self.bt_central.as_ref().unwrap().start_scan() {
+            Ok(_) => {},
+            Err(error) => return Err(
+                eyre!("Unable to start Bluetooth scan on adapter")
+                    .with_section(move || adapter_index.to_string().header("Configured adapter index:"))
+                    .with_section(move || error.to_string().header("Reason:"))
+                )
+        };
+
         Ok(())
     }
 
@@ -94,6 +103,14 @@ impl BluetoothScanner {
         if self.bt_central.is_some() {
             match self.bt_central.as_ref().unwrap().stop_scan() {
                 Ok(_) => {
+                    match self.bt_central.as_ref().unwrap().stop_scan() {
+                        Ok(_) => {},
+                        Err(error) => return Err(
+                            eyre!("Unable to stop Bluetooth scan on adapter")
+                            .with_section(move || self.adapter_index.unwrap().to_string().header("Configured adapter index:"))
+                            .with_section(move || error.to_string().header("Reason:"))
+                        )
+                    };
                     self.bt_central = None;
                     self.bt_receiver = None;
                 },
@@ -114,36 +131,7 @@ impl BluetoothScanner {
             self.release_adapter()?;
             self.reserve_adapter()?;
         }
-        let mut then = time::SystemTime::now();
-        let mut initially_started = false;
         loop {
-            if (then.elapsed().unwrap() >= time::Duration::from_secs(60) || !initially_started) && self.bt_central.is_some() {
-                match self.bt_central.as_ref().unwrap().stop_scan() {
-                    Ok(_) => {
-                        if initially_started {
-                            debug!("Shutting down Bluetooth scan due to hacky fix to random deaths.")
-                        }
-                    },
-                    Err(error) => return Err(
-                        eyre!("Unable to stop Bluetooth scan")
-                            .with_section(move || error.to_string().header("Reason:")) 
-                        )
-                };
-                match self.bt_central.as_ref().unwrap().start_scan() {
-                    Ok(_) => {
-                        if initially_started {
-                            debug!("(Re)starting Bluetooth scan due to hacky fix to random deaths.")
-                        }
-                        initially_started = true;
-                        then = time::SystemTime::now();
-                    },
-                    Err(error) => return Err(
-                        eyre!("Unable to start Bluetooth scan")
-                            .with_section(move || error.to_string().header("Reason:")) 
-                        )
-                };
-            }
-    
             // peek into cnc channel to receive commands from iotcore
             match self.cnc_receiver.try_recv() {
                 Ok(msg) => match msg {
