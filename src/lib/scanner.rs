@@ -19,7 +19,6 @@ pub struct RuuviBluetoothBeacon {
 }
 
 pub struct BluetoothScanner {
-    bt_manager: Manager,
     bt_central: Option<ConnectedAdapter>,
     bt_receiver: Option<Receiver<CentralEvent>>,
     channel_sender: channel::Sender<RuuviBluetoothBeacon>,
@@ -30,12 +29,21 @@ pub struct BluetoothScanner {
 impl BluetoothScanner {
     fn reserve_adapter(&mut self) -> Result<(), Report> {
         info!("Reserving Bluetooth adapter");
+
+        let manager = match Manager::new() {
+            Ok(manager) => manager,
+            Err(error) => return Err(
+                eyre!("Unable to initialize Bluetooth manager")
+                    .with_section(move || error.to_string().header("Reason:")) 
+                )
+        };
+
         if self.adapter_index.is_none() {
             return Err(eyre!("No adapter_index setup for reserving adapter"));
         }
         let adapter_index = self.adapter_index.unwrap();
 
-        let adapters = match self.bt_manager.adapters() {
+        let adapters = match manager.adapters() {
             Ok(adapters) => adapters,
             Err(error) => return Err(
                 eyre!("Unable to list Bluetooth adapters")
@@ -52,14 +60,14 @@ impl BluetoothScanner {
         };
 
         // reset the adapter -- clears out any errant state
-        adapter = match self.bt_manager.down(&adapter) {
+        adapter = match manager.down(&adapter) {
             Ok(adapter) => adapter,
             Err(error) => return Err(
                 eyre!("Unable to shutdown Bluetooth adapter")
                     .with_section(move || error.to_string().header("Reason:")) 
                 )
         };
-        adapter = match self.bt_manager.up(&adapter) {
+        adapter = match manager.up(&adapter) {
             Ok(adapter) => adapter,
             Err(error) => return Err(
                 eyre!("Unable to (re)start Bluetooth adapter")
@@ -224,17 +232,8 @@ impl BluetoothScanner {
     }
 
     pub fn build(s: &channel::Sender<RuuviBluetoothBeacon>, cnc_r: &channel::Receiver<IOTCoreCNCMessageKind>) -> Result<BluetoothScanner, Report> {
-        let manager = match Manager::new() {
-            Ok(manager) => manager,
-            Err(error) => return Err(
-                eyre!("Unable to initialize Bluetooth manager")
-                    .with_section(move || error.to_string().header("Reason:")) 
-                )
-        };
-
         Ok(BluetoothScanner {
             adapter_index: None,
-            bt_manager: manager,
             bt_central: None,
             bt_receiver: None,
             channel_sender: s.clone(),
