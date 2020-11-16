@@ -202,7 +202,7 @@ impl IotCoreClient {
                                 self.publish_message(self.state_topic.clone(), json!(&self.collectconfig).to_string().as_bytes().to_vec())?;
                                 // send config to CNC channel
                                 self.cnc_sender.send(IOTCoreCNCMessageKind::CONFIG(self.collectconfig.clone())).unwrap(); // TODO: fix unwrap    
-                                debug!("New collect config activated: {:?}", self.collectconfig);
+                                debug!("New collect config activated is '{:?}'", self.collectconfig);
                             }
                         } else if msg.topic().starts_with(&self.command_topic_root) {
                             // command was sent into root or subfolder of command channel
@@ -289,7 +289,7 @@ impl IotCoreClient {
                             message_queue.push(msg);
                         }
                     }
-                    debug!("Message queue size: {}/{}", message_queue.len(), self.collectconfig.as_ref().unwrap().collection_size());
+                    trace!("Message queue size: {}/{}", message_queue.len(), self.collectconfig.as_ref().unwrap().collection_size());
                 },
                 Err(error) => {
                     trace!("No bluetooth beacon in channel: {}", error);
