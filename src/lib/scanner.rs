@@ -29,6 +29,7 @@ pub struct BluetoothScanner {
 
 impl BluetoothScanner {
     fn reserve_adapter(&mut self) -> Result<(), Report> {
+        info!("Reserving Bluetooth adapter");
         if self.adapter_index.is_none() {
             return Err(eyre!("No adapter_index setup for reserving adapter"));
         }
@@ -101,6 +102,7 @@ impl BluetoothScanner {
 
     fn release_adapter(&mut self) -> Result<(), Report> {
         if self.bt_central.is_some() {
+            warn!("Releasing Bluetooth adapter.");
             match self.bt_central.as_ref().unwrap().stop_scan() {
                 Ok(_) => {
                     match self.bt_central.as_ref().unwrap().stop_scan() {
