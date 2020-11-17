@@ -238,9 +238,7 @@ impl IotCoreClient {
                         }
                     }
                 },
-                Err(error) => {
-                    trace!("No incoming cnc messages in topic consumer: {}", error);
-                }
+                Err(_) => {}
             };
 
             // check into the channel to see if there are beacons to relay to the mqtt broker
@@ -291,9 +289,11 @@ impl IotCoreClient {
                     }
                     trace!("Message queue size: {}/{}", message_queue.len(), self.collectconfig.as_ref().unwrap().collection_size());
                 },
-                Err(error) => {
-                    trace!("No bluetooth beacon in channel: {}", error);
-                }
+                Err(channel::TryRecvError::Disconnected) => {
+                    self.disconnect()?;
+                    return Err(eyre!("Bluetooth scanner thread channel has disconnected. Exiting."));
+                },
+                Err(_) => {}
             };
 
             // sleep for a while to reduce amount of CPU burn and idle for a while

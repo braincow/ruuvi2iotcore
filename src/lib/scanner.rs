@@ -1,7 +1,7 @@
 use btleplug::bluez::{adapter::ConnectedAdapter, manager::Manager};
 use btleplug::api::{CentralEvent, Central, Peripheral};
 use color_eyre::{eyre::eyre, SectionExt, Section, eyre::Report};
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{TryRecvError, Receiver};
 use crossbeam::channel;
 use structview::View;
 use chrono;
@@ -152,12 +152,32 @@ impl BluetoothScanner {
     }
 
     pub fn start_scanner(&mut self) -> Result<bool, Report> {
+        trace!("Entering to start_scanner()");
         if self.adapter_index.is_some() {
-            // i am perhaps restarting from main loop as I got here and I have some adapter index
-            // already configured
-            self.release_adapter()?;
-            self.reserve_adapter()?;
+            trace!("Entering to start_scanner() from unclean restart.");
+            // i am restarting from main loop as I got here and I have some adapter index
+            //  already configured
+            match self.release_adapter() {
+                Ok(_) => match self.reserve_adapter() {
+                    Ok(_) => self.start_scan()?,
+                    Err(error) => {
+                        error!("{}", error);
+                        self.release_adapter()?;
+                        self.adapter_index = None;
+                        // force exit to main loop and restart in clean state
+                        return Ok(false);
+                    }
+                },
+                Err(error) => {
+                    error!("{}", error);
+                    self.release_adapter()?;
+                    self.adapter_index = None;
+                    // force exit to main loop and restart in clean state
+                    return Ok(false);
+                }
+            };           
         }
+
         loop {
             // peek into cnc channel to receive commands from iotcore
             match self.cnc_receiver.try_recv() {
@@ -166,6 +186,7 @@ impl BluetoothScanner {
                         Some(command) => match command.command {
                             CNCCommand::SHUTDOWN => {
                                 warn!("CNC command received: SHUTDOWN software");
+                                self.release_adapter()?;
                                 break;
                             },
                             _ => warn!("Unimplemented CNC message for Bluetooth scanner: {:?}", command)
@@ -175,26 +196,28 @@ impl BluetoothScanner {
                     IOTCoreCNCMessageKind::CONFIG(collectconfig) => match collectconfig {
                         Some(collectconfig) => {
                             if self.adapter_index.is_none() {
+                                trace!("Associate Bluetooth adapter for the first time");
                                 // associate the adapter
                                 self.adapter_index = Some(collectconfig.bluetooth.adapter_index);
                                 self.reserve_adapter()?;
-                            } else {
-                                // we have an scanner enabled on a adapter already
-                                //  and due to the fact that btleplug mspc channel is associated to it
-                                //  we cant change it without a crash. therefore
+                            } else if self.adapter_index != Some(collectconfig.bluetooth.adapter_index) {
                                 //  store the adapter_index and exit with boolean value that causes main loop
                                 //  to restart us cleanly
+                                self.stop_scan()?;
                                 self.adapter_index = Some(collectconfig.bluetooth.adapter_index);
+                                trace!("Restarting through main loop to finalize change of associated Bluetooth adapter");
                                 return Ok(false)
+                            } else {
+                                trace!("No change to associated Bluetooth adapter");
                             }
-                            // restart scanning
+                            // (re)start scanning as a precaution against timeouts on some hardware or for the first time
                             self.stop_scan()?;
                             self.start_scan()?;
                         },
                         None => debug!("Empty collect config received from CNC channel")
                     }
                 },
-                Err(error) => trace!("Unable to receive incoming CNC message: {}", error)
+                Err(_) => {}
             };
 
             // check into the channel to see if there are beacons to relay to the mqtt broker
@@ -248,7 +271,11 @@ impl BluetoothScanner {
                             trace!("No manufacturer data received in: {:?}", properties);
                         }    
                     },
-                    Err(error) => trace!("Error on receiving Bluetooth event: {}", error)
+                    Err(TryRecvError::Disconnected) => {
+                        self.release_adapter()?;
+                        return Err(eyre!("IoT Core client thread channel has disconnected. Exiting."));    
+                    },
+                    Err(_) => {}
                 };
             }
 
