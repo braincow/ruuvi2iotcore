@@ -36,9 +36,8 @@ loggers:
   ruuvi2iotcore:
     level: debug
     appenders:
-      - console
       - ruuvilog
-    additive: false
+    additive: true
 
   # Route log events sent to the "btleplug::bluez::adapter" logger to the "file" appender,
   # and *not* the normal appenders installed at the root
@@ -51,15 +50,13 @@ loggers:
   ruuvi2iotcore::lib::iotcore:
     level: debug
     appenders:
-      - console
       - iotcorelog
-    additive: false
+    additive: true
 
   ruuvi2iotcore::lib::scanner:
     level: debug
     appenders:
-      - console
       - scannerlog
-    additive: false
+    additive: true
 
 # eof
