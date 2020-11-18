@@ -1,7 +1,7 @@
 use btleplug::bluez::{adapter::ConnectedAdapter, manager::Manager};
 use btleplug::api::{CentralEvent, Central, Peripheral};
 use color_eyre::{eyre::eyre, SectionExt, Section, eyre::Report};
-use std::sync::mpsc::{TryRecvError, Receiver};
+use std::sync::mpsc::Receiver;
 use crossbeam::channel;
 use structview::View;
 use chrono;
