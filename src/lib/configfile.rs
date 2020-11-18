@@ -1,9 +1,6 @@
 use std::{fs, path::Path};
 use serde::{Serialize, Deserialize};
 use color_eyre::{eyre::eyre, SectionExt, Section, eyre::Report};
-use std::io::Cursor;
-use x509_parser::pem::Pem;
-use addr::Email;
 
 #[derive(Debug,Deserialize,Serialize)]
 pub struct IdentityConfig {
@@ -21,66 +18,31 @@ impl IdentityConfig {
 
         self.token_lifetime.unwrap()
     }
+}
 
-    fn get_subject(&self) -> Result<Email, Report> {
-        let cert_data = match fs::read(Path::new(&self.public_key)) {
-            Ok(cert_data) => cert_data,
-            Err(error) => return Err(
-                eyre!("Unable to read certificate file")
-                    .with_section(move || self.public_key.to_string().header("File name:"))
-                    .with_section(move || error.to_string().header("Reason:"))
-                )
-        };
-        let reader = Cursor::new(cert_data);
-        let (pem, _bytes_read) = match Pem::read(reader) {
-            Ok(data) => data,
-            Err(error) => return Err(
-                eyre!("Unable to parse certificate file")
-                    .with_section(move || self.public_key.to_string().header("File name:"))
-                    .with_section(move || error.to_string().header("Reason:"))
-                )
-        };
-        let x509 = match pem.parse_x509() {
-            Ok(data) => data,
-            Err(error) => return Err(
-                eyre!("Unable to parse PEM certificate to DER internally")
-                    .with_section(move || self.public_key.to_string().header("File name:"))
-                    .with_section(move || error.to_string().header("Reason:"))
-                )
-        };
+#[derive(Debug,Deserialize,Serialize)]
+pub struct IotCoreConfig {
+    pub device_id: String,
+    pub project_id: String,
+    pub region: String,
+    pub registry: String
+}
 
-        let subject: Email;
-        if let Some(cn) = x509.tbs_certificate.subject.iter_common_name().next().and_then(|cn| cn.as_str().ok()) {
-            subject = match cn.parse() {
-                Ok(subject)=>subject,
-                Err(error) => return Err(
-                    eyre!("Unable to parse certificate Common Name field as email address.")
-                        .with_section(move || self.public_key.to_string().header("File name:"))
-                        .with_section(move || error.to_string().header("Reason:"))
-                    )
-            };
-        } else {
-            return Err(
-                eyre!("No Common Name field found in the certificate.")
-                    .with_section(move || self.public_key.to_string().header("File name:"))
-                )
-        };
-
-        Ok(subject)
-    }
-
-    pub fn device_id(&self) -> Result<String, Report> {
-        Ok(self.get_subject()?.user().to_string())
-    }
-
-    pub fn domain(&self) -> Result<String, Report> {
-        Ok(self.get_subject()?.host().to_string())
+impl IotCoreConfig {
+    pub fn client_id(&self) -> String {
+        let client_id = format!("projects/{}/locations/{}/registries/{}/devices/{}",
+            self.project_id,
+            self.region,
+            self.registry,
+            self.device_id);
+        client_id
     }
 }
 
 #[derive(Debug,Deserialize,Serialize)]
 pub struct AppConfig {
-    pub identity: IdentityConfig
+    pub identity: IdentityConfig,
+    pub iotcore: IotCoreConfig
 }
 
 impl AppConfig {

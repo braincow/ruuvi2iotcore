@@ -13,7 +13,6 @@ use crossbeam::thread;
 use crossbeam::channel::unbounded;
 
 use crate::lib::configfile::AppConfig;
-use crate::lib::dnsconfig::IotCoreConfig;
 use crate::lib::scanner::BluetoothScanner;
 use crate::lib::iotcore::IotCoreClient;
 
@@ -91,15 +90,11 @@ fn main() -> Result<(), Report> {
     // read configuration
     let appconfig = AppConfig::read_config(Path::new(matches.value_of("config").unwrap()))?;
     debug!("appconfig is '{:?}'", appconfig);
-    // autodetect registry settings from dns based on the certificate (configured in configfile)
-    //  CN= info.
-    let iotconfig = IotCoreConfig::build(&appconfig.identity.device_id()?, &appconfig.identity.domain()?)?;
-    debug!("iotcnfig is '{:?}'", iotconfig);
 
     let (cnc_s, cnc_r) = unbounded();
     let (event_s, event_r) = unbounded();
     let mut scanner = BluetoothScanner::build(&event_s, &cnc_r)?;
-    let mut iotcore = IotCoreClient::build(&appconfig, &iotconfig, &event_r, &cnc_s)?;
+    let mut iotcore = IotCoreClient::build(&appconfig, &event_r, &cnc_s)?;
 
     thread::scope(|scope| {
         // spawn the mqtt thread

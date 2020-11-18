@@ -8,7 +8,6 @@ use std::sync::mpsc::Receiver;
 use std::clone::Clone;
 
 use crate::lib::configfile::AppConfig;
-use crate::lib::dnsconfig::IotCoreConfig;
 use crate::lib::scanner::RuuviBluetoothBeacon;
 use crate::lib::jwt::IotCoreAuthToken;
 
@@ -300,10 +299,10 @@ impl IotCoreClient {
         Ok(())
     }
 
-    pub fn build(appconfig: &AppConfig, iotconfig: &IotCoreConfig, r: &channel::Receiver<RuuviBluetoothBeacon>, cnc_s: &channel::Sender<IOTCoreCNCMessageKind>) -> Result<IotCoreClient, Report> {
+    pub fn build(appconfig: &AppConfig, r: &channel::Receiver<RuuviBluetoothBeacon>, cnc_s: &channel::Sender<IOTCoreCNCMessageKind>) -> Result<IotCoreClient, Report> {
 
         let create_opts = mqtt::CreateOptionsBuilder::new()
-            .client_id(iotconfig.client_id())
+            .client_id(appconfig.iotcore.client_id())
             .mqtt_version(mqtt::types::MQTT_VERSION_3_1_1)
             .server_uri("ssl://mqtt.googleapis.com:8883")
             .persistence(mqtt::PersistenceType::None)
@@ -343,7 +342,7 @@ impl IotCoreClient {
         };
         let ssl_options = ssl_options_builder.finalize();
 
-        let jwt_factory = IotCoreAuthToken::build(appconfig, iotconfig);
+        let jwt_factory = IotCoreAuthToken::build(appconfig);
         let jwt_token = match jwt_factory.issue_new() {
             Ok(token) => token,
             Err(error) => return Err(
@@ -361,7 +360,7 @@ impl IotCoreClient {
         // thru mspc relay incoming messages from cnc topics
         let consumer = cli.start_consuming();
 
-        let device_id = appconfig.identity.device_id()?;
+        let device_id = appconfig.iotcore.device_id.clone();
 
         Ok(IotCoreClient {
             device_id: device_id.clone(),
