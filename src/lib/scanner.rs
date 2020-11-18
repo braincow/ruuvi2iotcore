@@ -271,10 +271,6 @@ impl BluetoothScanner {
                             trace!("No manufacturer data received in: {:?}", properties);
                         }    
                     },
-                    Err(TryRecvError::Disconnected) => {
-                        self.release_adapter()?;
-                        return Err(eyre!("IoT Core client thread channel has disconnected. Exiting."));    
-                    },
                     Err(_) => {}
                 };
             }

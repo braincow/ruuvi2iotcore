@@ -289,10 +289,6 @@ impl IotCoreClient {
                     }
                     trace!("Message queue size: {}/{}", message_queue.len(), self.collectconfig.as_ref().unwrap().collection_size());
                 },
-                Err(channel::TryRecvError::Disconnected) => {
-                    self.disconnect()?;
-                    return Err(eyre!("Bluetooth scanner thread channel has disconnected. Exiting."));
-                },
                 Err(_) => {}
             };
 
