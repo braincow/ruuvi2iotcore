@@ -117,10 +117,15 @@ fn main() -> Result<(), Report> {
         scope.spawn(move|_| {
             loop {
                 match scanner.start_scanner() {
-                    Ok(_) => break,
+                    Ok(exit) => if exit {
+                        break;
+                    } else {
+                        info!("Restarting Bluetooth scanner due to adapter index change or adapter index reset.");
+                    },
                     Err(error) => error!("Restarting bluetooth scanner: {}", error)
                 };
             }
+            info!("Shutting down Bluetooth scanner thread.");
         });
     }).unwrap();
 

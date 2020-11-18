@@ -1,7 +1,7 @@
 use btleplug::bluez::{adapter::ConnectedAdapter, manager::Manager};
 use btleplug::api::{CentralEvent, Central, Peripheral};
 use color_eyre::{eyre::eyre, SectionExt, Section, eyre::Report};
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{TryRecvError, Receiver};
 use crossbeam::channel;
 use structview::View;
 use chrono;
@@ -19,7 +19,6 @@ pub struct RuuviBluetoothBeacon {
 }
 
 pub struct BluetoothScanner {
-    bt_manager: Manager,
     bt_central: Option<ConnectedAdapter>,
     bt_receiver: Option<Receiver<CentralEvent>>,
     channel_sender: channel::Sender<RuuviBluetoothBeacon>,
@@ -29,12 +28,22 @@ pub struct BluetoothScanner {
 
 impl BluetoothScanner {
     fn reserve_adapter(&mut self) -> Result<(), Report> {
+        info!("Reserving Bluetooth adapter");
+
+        let manager = match Manager::new() {
+            Ok(manager) => manager,
+            Err(error) => return Err(
+                eyre!("Unable to initialize Bluetooth manager")
+                    .with_section(move || error.to_string().header("Reason:")) 
+                )
+        };
+
         if self.adapter_index.is_none() {
             return Err(eyre!("No adapter_index setup for reserving adapter"));
         }
         let adapter_index = self.adapter_index.unwrap();
 
-        let adapters = match self.bt_manager.adapters() {
+        let adapters = match manager.adapters() {
             Ok(adapters) => adapters,
             Err(error) => return Err(
                 eyre!("Unable to list Bluetooth adapters")
@@ -51,14 +60,14 @@ impl BluetoothScanner {
         };
 
         // reset the adapter -- clears out any errant state
-        adapter = match self.bt_manager.down(&adapter) {
+        adapter = match manager.down(&adapter) {
             Ok(adapter) => adapter,
             Err(error) => return Err(
                 eyre!("Unable to shutdown Bluetooth adapter")
                     .with_section(move || error.to_string().header("Reason:")) 
                 )
         };
-        adapter = match self.bt_manager.up(&adapter) {
+        adapter = match manager.up(&adapter) {
             Ok(adapter) => adapter,
             Err(error) => return Err(
                 eyre!("Unable to (re)start Bluetooth adapter")
@@ -74,8 +83,6 @@ impl BluetoothScanner {
                     .with_section(move || error.to_string().header("Reason:")) 
                 )
         };
-        // use only passive scan as we are interested in beacons only
-        central.active(false);
         self.bt_central = Some(central.clone());
 
         let receiver = match central.event_receiver() {
@@ -92,6 +99,7 @@ impl BluetoothScanner {
 
     fn release_adapter(&mut self) -> Result<(), Report> {
         if self.bt_central.is_some() {
+            warn!("Releasing Bluetooth adapter.");
             match self.bt_central.as_ref().unwrap().stop_scan() {
                 Ok(_) => {
                     self.bt_central = None;
@@ -107,43 +115,70 @@ impl BluetoothScanner {
         Ok(())
     }
 
-    pub fn start_scanner(&mut self) -> Result<(), Report> {
-        if self.adapter_index.is_some() {
-            // i am perhaps restarting from main loop as I got here and I have some adapter index
-            // already configured
-            self.release_adapter()?;
-            self.reserve_adapter()?;
-        }
-        let mut then = time::SystemTime::now();
-        let mut initially_started = false;
-        loop {
-            if (then.elapsed().unwrap() >= time::Duration::from_secs(60) || !initially_started) && self.bt_central.is_some() {
-                match self.bt_central.as_ref().unwrap().stop_scan() {
-                    Ok(_) => {
-                        if initially_started {
-                            debug!("Shutting down Bluetooth scan due to hacky fix to random deaths.")
-                        }
-                    },
-                    Err(error) => return Err(
-                        eyre!("Unable to stop Bluetooth scan")
-                            .with_section(move || error.to_string().header("Reason:")) 
-                        )
-                };
+    fn start_scan(&self) -> Result<(), Report> {
+        match self.bt_central {
+            None => return Err(eyre!("No Bluetooth adapter reserved for use")),
+            Some(_) => {
+                // use only passive scan as we are interested in beacons only
+                self.bt_central.as_ref().unwrap().active(false);
                 match self.bt_central.as_ref().unwrap().start_scan() {
-                    Ok(_) => {
-                        if initially_started {
-                            debug!("(Re)starting Bluetooth scan due to hacky fix to random deaths.")
-                        }
-                        initially_started = true;
-                        then = time::SystemTime::now();
-                    },
+                    Ok(_) => info!("Started passive Bluetooth scan on configured adapter"),
                     Err(error) => return Err(
-                        eyre!("Unable to start Bluetooth scan")
-                            .with_section(move || error.to_string().header("Reason:")) 
+                        eyre!("Unable to start Bluetooth scan on adapter")
+                            .with_section(move || self.adapter_index.unwrap().to_string().header("Configured adapter index:"))
+                            .with_section(move || error.to_string().header("Reason:"))
                         )
-                };
+                };        
+                Ok(())
             }
-    
+        }
+    }
+
+    fn stop_scan(&self) -> Result<(), Report> {
+        match self.bt_central {
+            None => return Err(eyre!("No Bluetooth adapter reserved for use")),
+            Some(_) => {
+                match self.bt_central.as_ref().unwrap().stop_scan() {
+                    Ok(_) => warn!("Stopped passive Bluetooth scan on configured adapter"),
+                    Err(error) => return Err(
+                        eyre!("Unable to stop Bluetooth scan on adapter")
+                        .with_section(move || self.adapter_index.unwrap().to_string().header("Configured adapter index:"))
+                        .with_section(move || error.to_string().header("Reason:"))
+                    )
+                };
+                Ok(())
+            }
+        }
+    }
+
+    pub fn start_scanner(&mut self) -> Result<bool, Report> {
+        trace!("Entering to start_scanner()");
+        if self.adapter_index.is_some() {
+            trace!("Entering to start_scanner() from unclean restart.");
+            // i am restarting from main loop as I got here and I have some adapter index
+            //  already configured
+            match self.release_adapter() {
+                Ok(_) => match self.reserve_adapter() {
+                    Ok(_) => self.start_scan()?,
+                    Err(error) => {
+                        error!("{}", error);
+                        self.release_adapter()?;
+                        self.adapter_index = None;
+                        // force exit to main loop and restart in clean state
+                        return Ok(false);
+                    }
+                },
+                Err(error) => {
+                    error!("{}", error);
+                    self.release_adapter()?;
+                    self.adapter_index = None;
+                    // force exit to main loop and restart in clean state
+                    return Ok(false);
+                }
+            };           
+        }
+
+        loop {
             // peek into cnc channel to receive commands from iotcore
             match self.cnc_receiver.try_recv() {
                 Ok(msg) => match msg {
@@ -151,6 +186,7 @@ impl BluetoothScanner {
                         Some(command) => match command.command {
                             CNCCommand::SHUTDOWN => {
                                 warn!("CNC command received: SHUTDOWN software");
+                                self.release_adapter()?;
                                 break;
                             },
                             _ => warn!("Unimplemented CNC message for Bluetooth scanner: {:?}", command)
@@ -159,14 +195,29 @@ impl BluetoothScanner {
                     },
                     IOTCoreCNCMessageKind::CONFIG(collectconfig) => match collectconfig {
                         Some(collectconfig) => {
-                            self.release_adapter()?;
-                            self.adapter_index = Some(collectconfig.bluetooth.adapter_index);
-                            self.reserve_adapter()?;
+                            if self.adapter_index.is_none() {
+                                trace!("Associate Bluetooth adapter for the first time");
+                                // associate the adapter
+                                self.adapter_index = Some(collectconfig.bluetooth.adapter_index);
+                                self.reserve_adapter()?;
+                            } else if self.adapter_index != Some(collectconfig.bluetooth.adapter_index) {
+                                //  store the adapter_index and exit with boolean value that causes main loop
+                                //  to restart us cleanly
+                                self.stop_scan()?;
+                                self.adapter_index = Some(collectconfig.bluetooth.adapter_index);
+                                trace!("Restarting through main loop to finalize change of associated Bluetooth adapter");
+                                return Ok(false)
+                            } else {
+                                trace!("No change to associated Bluetooth adapter");
+                            }
+                            // (re)start scanning as a precaution against timeouts on some hardware or for the first time
+                            self.stop_scan()?;
+                            self.start_scan()?;
                         },
                         None => debug!("Empty collect config received from CNC channel")
                     }
                 },
-                Err(error) => trace!("Unable to receive incoming CNC message: {}", error)
+                Err(_) => {}
             };
 
             // check into the channel to see if there are beacons to relay to the mqtt broker
@@ -220,7 +271,11 @@ impl BluetoothScanner {
                             trace!("No manufacturer data received in: {:?}", properties);
                         }    
                     },
-                    Err(error) => trace!("Error on receiving Bluetooth event: {}", error)
+                    Err(TryRecvError::Disconnected) => {
+                        self.release_adapter()?;
+                        return Err(eyre!("IoT Core client thread channel has disconnected. Exiting."));    
+                    },
+                    Err(_) => {}
                 };
             }
 
@@ -230,21 +285,12 @@ impl BluetoothScanner {
 
         self.release_adapter()?;
 
-        Ok(())
+        Ok(true)
     }
 
     pub fn build(s: &channel::Sender<RuuviBluetoothBeacon>, cnc_r: &channel::Receiver<IOTCoreCNCMessageKind>) -> Result<BluetoothScanner, Report> {
-        let manager = match Manager::new() {
-            Ok(manager) => manager,
-            Err(error) => return Err(
-                eyre!("Unable to initialize Bluetooth manager")
-                    .with_section(move || error.to_string().header("Reason:")) 
-                )
-        };
-
         Ok(BluetoothScanner {
             adapter_index: None,
-            bt_manager: manager,
             bt_central: None,
             bt_receiver: None,
             channel_sender: s.clone(),

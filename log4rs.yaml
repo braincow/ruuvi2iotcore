@@ -34,7 +34,7 @@ root:
 
 loggers:
   ruuvi2iotcore:
-    level: debug
+    level: trace
     appenders:
       - ruuvilog
     additive: true
@@ -48,13 +48,13 @@ loggers:
     additive: false
 
   ruuvi2iotcore::lib::iotcore:
-    level: debug
+    level: trace
     appenders:
       - iotcorelog
     additive: true
 
   ruuvi2iotcore::lib::scanner:
-    level: debug
+    level: trace
     appenders:
       - scannerlog
     additive: true
