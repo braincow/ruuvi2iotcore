@@ -1,5 +1,4 @@
 use serde::{Serialize, Deserialize};
-use std::path::Path;
 use std::time::Duration;
 use color_eyre::{eyre::eyre, SectionExt, Section, eyre::Report};
 use crossbeam::channel;
@@ -319,15 +318,30 @@ impl IotCoreClient {
         };
         cli.set_timeout(Duration::from_secs(5));
 
-        let ssl_options = match mqtt::SslOptionsBuilder::new()
-            .ssl_version(mqtt::SslVersion::Tls_1_2)
-            .trust_store(Path::new(&appconfig.identity.ca_certs).to_path_buf()) {
-                Ok(options) => options.finalize(),
-                Err(error) => return Err(
-                    eyre!("Unable to instantiate Paho MQTT clients SSL options")
-                        .with_section(move || error.to_string().header("Reason:"))
-                    )
-            };
+        let mut ssl_options_builder = mqtt::SslOptionsBuilder::new();
+        ssl_options_builder.ssl_version(mqtt::SslVersion::Tls_1_2);
+        match ssl_options_builder.trust_store(&appconfig.identity.ca_certs) {
+            Ok(options_builder) => options_builder,
+            Err(error) => return Err(
+                eyre!("Unable to use CA certificates in mqtt client")
+                    .with_section(move || error.to_string().header("Reason:"))
+                )
+        };
+        match ssl_options_builder.key_store(&appconfig.identity.public_key) {
+            Ok(options_builder) => options_builder,
+            Err(error) => return Err(
+                eyre!("Unable to use public key in mqtt client")
+                    .with_section(move || error.to_string().header("Reason:"))
+                )
+        };
+        match ssl_options_builder.private_key(&appconfig.identity.private_key) {
+            Ok(options_builder) => options_builder,
+            Err(error) => return Err(
+                eyre!("Unable to use private key in mqtt client")
+                    .with_section(move || error.to_string().header("Reason:"))
+                )
+        };
+        let ssl_options = ssl_options_builder.finalize();
 
         let jwt_factory = IotCoreAuthToken::build(appconfig, iotconfig);
         let jwt_token = match jwt_factory.issue_new() {
