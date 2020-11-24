@@ -1,5 +1,5 @@
 use serde::{Serialize, Deserialize};
-use std::time::Duration;
+use std::time::{Instant, Duration};
 use color_eyre::{eyre::eyre, SectionExt, Section, eyre::Report};
 use crossbeam::channel;
 use paho_mqtt as mqtt;
@@ -163,7 +163,7 @@ impl IotCoreClient {
         Ok(())
     }
 
-    pub fn start_client(&mut self) -> Result<(), Report> {
+    pub fn start_client(&mut self) -> Result<bool, Report> {
 
         // cycle connection state
         if self.client.is_connected() {
@@ -173,8 +173,20 @@ impl IotCoreClient {
         
         let mut message_queue: Vec<RuuviBluetoothBeacon> = Vec::new();
 
+        let mut last_seen = Instant::now();
+
         // loop messages and wait for a ready signal
         loop {
+            // check that we are actually doing work, and if not then issue a restart
+            //  we have 60 seconds here to facilitate possible restart of the bluetooth stack first
+            if last_seen.elapsed() >= Duration::from_secs(60) {
+                // exit cleanly and issue restart from main loop
+                if self.client.is_connected() {
+                    self.disconnect()?;
+                }
+                return Ok(false)
+            }
+
             // check into the subscriptions if there are any incoming cnc messages
             match self.consumer.try_recv() {
                 Ok(optmsg) => {
@@ -242,6 +254,8 @@ impl IotCoreClient {
             // check into the channel to see if there are beacons to relay to the mqtt broker
             match self.channel_receiver.try_recv() {
                 Ok(msg) => {
+                    // update the last_seen counter to verify internally that we are doing work
+                    last_seen = Instant::now();
                     // check against collectconfig if this beacon shall be submitted
                     let publish = match &self.collectconfig {
                         Some(collectconfig) => {
@@ -296,7 +310,7 @@ impl IotCoreClient {
         
         self.disconnect()?;
         
-        Ok(())
+        Ok(false)
     }
 
     pub fn build(appconfig: &AppConfig, r: &channel::Receiver<RuuviBluetoothBeacon>, cnc_s: &channel::Sender<IOTCoreCNCMessageKind>) -> Result<IotCoreClient, Report> {
