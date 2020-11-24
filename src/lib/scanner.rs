@@ -183,7 +183,8 @@ impl BluetoothScanner {
         loop {
             // check that we are actually doing work, and if not then issue a restart
             //  we should receive multiple beacons with in 30 seconds
-            if last_seen.elapsed() >= time::Duration::from_secs(30) {
+            if last_seen.elapsed() >= time::Duration::from_secs(33) {
+                warn!("No beacons detected for 33 seconds. Issuing thread clean restart.");
                 // exit cleanly and issue restart from main loop
                 self.release_adapter()?;
                 return Ok(false);

@@ -179,7 +179,8 @@ impl IotCoreClient {
         loop {
             // check that we are actually doing work, and if not then issue a restart
             //  we have 60 seconds here to facilitate possible restart of the bluetooth stack first
-            if last_seen.elapsed() >= Duration::from_secs(60) {
+            if last_seen.elapsed() >= Duration::from_secs(58) {
+                warn!("No beacons detected for 58 seconds. Issuing thread clean restart.");
                 // exit cleanly and issue restart from main loop
                 if self.client.is_connected() {
                     self.disconnect()?;
