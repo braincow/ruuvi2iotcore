@@ -19,12 +19,6 @@ appenders:
   btlepluglog:
     kind: file
     path: "log/btleplug.log"
-  iotcorelog:
-    kind: file
-    path: "log/iotcore.log"
-  scannerlog:
-    kind: file
-    path: "log/scanner.log"
 
 # Set the default logging level to "info" and attach the "stdout" appender to the root
 root:
@@ -40,23 +34,11 @@ loggers:
     additive: true
 
   # Route log events sent to the "btleplug::bluez::adapter" logger to the "file" appender,
-  # and *not* the normal appenders installed at the root
+  #   and *not* the normal appenders installed at the root
   btleplug::bluez::adapter:
     level: info
     appenders:
       - btlepluglog
     additive: false
-
-  ruuvi2iotcore::lib::iotcore:
-    level: trace
-    appenders:
-      - iotcorelog
-    additive: true
-
-  ruuvi2iotcore::lib::scanner:
-    level: trace
-    appenders:
-      - scannerlog
-    additive: true
 
 # eof
