@@ -311,7 +311,7 @@ impl IotCoreClient {
         
         self.disconnect()?;
         
-        Ok(false)
+        Ok(true)
     }
 
     pub fn build(appconfig: &AppConfig, r: &channel::Receiver<RuuviBluetoothBeacon>, cnc_s: &channel::Sender<IOTCoreCNCMessageKind>) -> Result<IotCoreClient, Report> {
