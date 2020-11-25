@@ -250,6 +250,7 @@ impl IotCoreClient {
                                     },
                                     CNCCommand::RESET => {
                                         warn!("CNC command received: RESET software");
+                                        self.disconnect()?;
                                         return Ok(false)
                                     },
                                 };
