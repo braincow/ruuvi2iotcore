@@ -355,6 +355,7 @@ impl IotCoreClient {
             .user_name("not_used")
             .password(jwt_token)
             .ssl_options(ssl_options.clone())
+            .keep_alive_interval(Duration::from_secs(45))
             .finalize();
 
         // thru mspc relay incoming messages from cnc topics
