@@ -200,6 +200,10 @@ impl BluetoothScanner {
                                 self.release_adapter()?;
                                 break;
                             },
+                            CNCCommand::RESET => {
+                                warn!("CNC command received: RESET software");
+                                return Ok(false);
+                            }
                             _ => warn!("Unimplemented CNC message for Bluetooth scanner: {:?}", command)
                         },
                         None => debug!("Empty command received from CNC channel")

@@ -104,9 +104,9 @@ fn main() -> Result<(), Report> {
                     Ok(exit) => if exit {
                         break;
                     } else {
-                        info!("Restarting IoT Core client due to beacon inactivity.");
+                        info!("Restarting IoT Core client due to internal state change.");
                     },
-                    Err(error) => error!("Restarting iotcore client: {}", error)
+                    Err(error) => error!("Restarting iotcore client due to error: {}", error)
                 };
             }
             info!("Shutting down IotCore client thread.");
@@ -119,9 +119,9 @@ fn main() -> Result<(), Report> {
                     Ok(exit) => if exit {
                         break;
                     } else {
-                        info!("Restarting Bluetooth scanner due to adapter index change, adapter index reset or beacon inactivity.");
+                        info!("Restarting Bluetooth scanner due to internal state change.");
                     },
-                    Err(error) => error!("Restarting bluetooth scanner: {}", error)
+                    Err(error) => error!("Restarting bluetooth scanner due to error: {}", error)
                 };
             }
             info!("Shutting down Bluetooth scanner thread.");

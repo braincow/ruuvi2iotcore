@@ -24,7 +24,9 @@ pub enum CNCCommand {
     #[serde(rename = "pause")]
     PAUSE,
     #[serde(rename = "shutdown")]
-    SHUTDOWN
+    SHUTDOWN,
+    #[serde(rename = "reset")]
+    RESET,
 }
 
 #[derive(Debug,Deserialize, Clone)]
@@ -167,6 +169,7 @@ impl IotCoreClient {
 
         // cycle connection state
         if self.client.is_connected() {
+            trace!("Entering to start_client() from unclean restart.");
             self.disconnect()?;
         }
         self.connect()?;
@@ -244,6 +247,10 @@ impl IotCoreClient {
                                     CNCCommand::SHUTDOWN => {
                                         warn!("CNC command received: SHUTDOWN software");
                                         break;
+                                    },
+                                    CNCCommand::RESET => {
+                                        warn!("CNC command received: RESET software");
+                                        return Ok(false)
                                     },
                                 };
                             }
