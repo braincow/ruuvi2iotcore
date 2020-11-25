@@ -32,7 +32,7 @@ pub struct CNCCommandMessage {
     pub command: CNCCommand
 }
 
-#[derive(Debug,Deserialize,Serialize,Clone)]
+#[derive(Debug,Deserialize,Serialize,Clone,PartialEq,PartialOrd)]
 enum CollectMode {
     #[serde(rename = "blacklist")]
     BLACKLIST,
@@ -40,12 +40,12 @@ enum CollectMode {
     WHITELIST
 }
 
-#[derive(Debug,Deserialize,Serialize,Clone)]
+#[derive(Debug,Deserialize,Serialize,Clone,PartialEq,PartialOrd)]
 pub struct BluetoothConfig {
     pub adapter_index: usize
 }
 
-#[derive(Debug,Deserialize,Serialize,Clone)]
+#[derive(Debug,Deserialize,Serialize,Clone,PartialEq,PartialOrd)]
 pub struct CollectConfig {
     mode: CollectMode,
     addresses: Vec<String>,
@@ -183,14 +183,15 @@ impl IotCoreClient {
 
                         if msg.topic() == self.config_topic {
                             // we received new config, decode it
-                            self.collectconfig = match serde_json::from_str(&msg.payload_str()) {
+                            let new_collectconfig: Option<CollectConfig> = match serde_json::from_str(&msg.payload_str()) {
                                 Ok(config) => Some(config),
                                 Err(error) => { 
                                     error!("Unable to parse new collect config: {}", error);
                                     None
                                 }
                             };
-                            if self.collectconfig.is_some() {
+                            if new_collectconfig != self.collectconfig && new_collectconfig.is_some() {
+                                self.collectconfig = new_collectconfig;
                                 let events_topic = match &self.collectconfig.as_ref().unwrap().event_subfolder {
                                     Some(subfolder) => format!("/devices/{}/events/{}", self.device_id, subfolder),
                                     None => format!("/devices/{}/events", self.device_id)
@@ -201,6 +202,8 @@ impl IotCoreClient {
                                 // send config to CNC channel
                                 self.cnc_sender.send(IOTCoreCNCMessageKind::CONFIG(self.collectconfig.clone())).unwrap(); // TODO: fix unwrap    
                                 debug!("New collect config activated is '{:?}'", self.collectconfig);
+                            } else {
+                                debug!("Not replacing active collect config with identical one.");
                             }
                         } else if msg.topic().starts_with(&self.command_topic_root) {
                             // command was sent into root or subfolder of command channel
