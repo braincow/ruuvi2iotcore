@@ -178,7 +178,18 @@ impl BluetoothScanner {
             };           
         }
 
+        let mut last_seen = time::Instant::now();
+
         loop {
+            // check that we are actually doing work, and if not then issue a restart
+            //  we should receive multiple beacons with in 30 seconds
+            if last_seen.elapsed() >= time::Duration::from_secs(33) {
+                warn!("No beacons detected for 33 seconds. Issuing thread clean restart.");
+                // exit cleanly and issue restart from main loop
+                self.release_adapter()?;
+                return Ok(false);
+            }
+
             // peek into cnc channel to receive commands from iotcore
             match self.cnc_receiver.try_recv() {
                 Ok(msg) => match msg {
@@ -189,6 +200,11 @@ impl BluetoothScanner {
                                 self.release_adapter()?;
                                 break;
                             },
+                            CNCCommand::RESET => {
+                                warn!("CNC command received: RESET software");
+                                self.release_adapter()?;
+                                return Ok(false);
+                            }
                             _ => warn!("Unimplemented CNC message for Bluetooth scanner: {:?}", command)
                         },
                         None => debug!("Empty command received from CNC channel")
@@ -224,6 +240,9 @@ impl BluetoothScanner {
             if self.bt_receiver.is_some() && self.bt_central.is_some() {
                 match  self.bt_receiver.as_ref().unwrap().try_recv() {
                     Ok(event) => {
+                        // update the last_seen counter to verify internally that we are doing work
+                        last_seen = time::Instant::now();
+
                         let bd_addr = match event {
                             CentralEvent::DeviceDiscovered(bd_addr) => Some(bd_addr),
                             CentralEvent::DeviceUpdated(bd_addr) => Some(bd_addr),

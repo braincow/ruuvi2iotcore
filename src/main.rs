@@ -101,8 +101,12 @@ fn main() -> Result<(), Report> {
         scope.spawn(move|_| {
             loop {
                 match iotcore.start_client() {
-                    Ok(_) => break,
-                    Err(error) => error!("Restarting iotcore client: {}", error)
+                    Ok(exit) => if exit {
+                        break;
+                    } else {
+                        info!("Restarting IoT Core client due to internal state change.");
+                    },
+                    Err(error) => error!("Restarting iotcore client due to error: {}", error)
                 };
             }
             info!("Shutting down IotCore client thread.");
@@ -115,9 +119,9 @@ fn main() -> Result<(), Report> {
                     Ok(exit) => if exit {
                         break;
                     } else {
-                        info!("Restarting Bluetooth scanner due to adapter index change or adapter index reset.");
+                        info!("Restarting Bluetooth scanner due to internal state change.");
                     },
-                    Err(error) => error!("Restarting bluetooth scanner: {}", error)
+                    Err(error) => error!("Restarting bluetooth scanner due to error: {}", error)
                 };
             }
             info!("Shutting down Bluetooth scanner thread.");

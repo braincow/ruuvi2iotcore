@@ -1,5 +1,5 @@
 use serde::{Serialize, Deserialize};
-use std::time::Duration;
+use std::time::{Instant, Duration};
 use color_eyre::{eyre::eyre, SectionExt, Section, eyre::Report};
 use crossbeam::channel;
 use paho_mqtt as mqtt;
@@ -24,7 +24,9 @@ pub enum CNCCommand {
     #[serde(rename = "pause")]
     PAUSE,
     #[serde(rename = "shutdown")]
-    SHUTDOWN
+    SHUTDOWN,
+    #[serde(rename = "reset")]
+    RESET,
 }
 
 #[derive(Debug,Deserialize, Clone)]
@@ -32,7 +34,7 @@ pub struct CNCCommandMessage {
     pub command: CNCCommand
 }
 
-#[derive(Debug,Deserialize,Serialize,Clone)]
+#[derive(Debug,Deserialize,Serialize,Clone,PartialEq,PartialOrd)]
 enum CollectMode {
     #[serde(rename = "blacklist")]
     BLACKLIST,
@@ -40,12 +42,12 @@ enum CollectMode {
     WHITELIST
 }
 
-#[derive(Debug,Deserialize,Serialize,Clone)]
+#[derive(Debug,Deserialize,Serialize,Clone,PartialEq,PartialOrd)]
 pub struct BluetoothConfig {
     pub adapter_index: usize
 }
 
-#[derive(Debug,Deserialize,Serialize,Clone)]
+#[derive(Debug,Deserialize,Serialize,Clone,PartialEq,PartialOrd)]
 pub struct CollectConfig {
     mode: CollectMode,
     addresses: Vec<String>,
@@ -163,18 +165,32 @@ impl IotCoreClient {
         Ok(())
     }
 
-    pub fn start_client(&mut self) -> Result<(), Report> {
+    pub fn start_client(&mut self) -> Result<bool, Report> {
 
         // cycle connection state
         if self.client.is_connected() {
+            trace!("Entering to start_client() from unclean restart.");
             self.disconnect()?;
         }
         self.connect()?;
         
         let mut message_queue: Vec<RuuviBluetoothBeacon> = Vec::new();
 
+        let mut last_seen = Instant::now();
+
         // loop messages and wait for a ready signal
         loop {
+            // check that we are actually doing work, and if not then issue a restart
+            //  we have 60 seconds here to facilitate possible restart of the bluetooth stack first
+            if last_seen.elapsed() >= Duration::from_secs(58) {
+                warn!("No beacons detected for 58 seconds. Issuing thread clean restart.");
+                // exit cleanly and issue restart from main loop
+                if self.client.is_connected() {
+                    self.disconnect()?;
+                }
+                return Ok(false)
+            }
+
             // check into the subscriptions if there are any incoming cnc messages
             match self.consumer.try_recv() {
                 Ok(optmsg) => {
@@ -183,14 +199,15 @@ impl IotCoreClient {
 
                         if msg.topic() == self.config_topic {
                             // we received new config, decode it
-                            self.collectconfig = match serde_json::from_str(&msg.payload_str()) {
+                            let new_collectconfig: Option<CollectConfig> = match serde_json::from_str(&msg.payload_str()) {
                                 Ok(config) => Some(config),
                                 Err(error) => { 
                                     error!("Unable to parse new collect config: {}", error);
                                     None
                                 }
                             };
-                            if self.collectconfig.is_some() {
+                            if new_collectconfig != self.collectconfig && new_collectconfig.is_some() {
+                                self.collectconfig = new_collectconfig;
                                 let events_topic = match &self.collectconfig.as_ref().unwrap().event_subfolder {
                                     Some(subfolder) => format!("/devices/{}/events/{}", self.device_id, subfolder),
                                     None => format!("/devices/{}/events", self.device_id)
@@ -201,6 +218,8 @@ impl IotCoreClient {
                                 // send config to CNC channel
                                 self.cnc_sender.send(IOTCoreCNCMessageKind::CONFIG(self.collectconfig.clone())).unwrap(); // TODO: fix unwrap    
                                 debug!("New collect config activated is '{:?}'", self.collectconfig);
+                            } else {
+                                debug!("Not replacing active collect config with identical one.");
                             }
                         } else if msg.topic().starts_with(&self.command_topic_root) {
                             // command was sent into root or subfolder of command channel
@@ -229,6 +248,11 @@ impl IotCoreClient {
                                         warn!("CNC command received: SHUTDOWN software");
                                         break;
                                     },
+                                    CNCCommand::RESET => {
+                                        warn!("CNC command received: RESET software");
+                                        self.disconnect()?;
+                                        return Ok(false)
+                                    },
                                 };
                             }
                         } else {
@@ -242,6 +266,8 @@ impl IotCoreClient {
             // check into the channel to see if there are beacons to relay to the mqtt broker
             match self.channel_receiver.try_recv() {
                 Ok(msg) => {
+                    // update the last_seen counter to verify internally that we are doing work
+                    last_seen = Instant::now();
                     // check against collectconfig if this beacon shall be submitted
                     let publish = match &self.collectconfig {
                         Some(collectconfig) => {
@@ -296,7 +322,7 @@ impl IotCoreClient {
         
         self.disconnect()?;
         
-        Ok(())
+        Ok(true)
     }
 
     pub fn build(appconfig: &AppConfig, r: &channel::Receiver<RuuviBluetoothBeacon>, cnc_s: &channel::Sender<IOTCoreCNCMessageKind>) -> Result<IotCoreClient, Report> {
