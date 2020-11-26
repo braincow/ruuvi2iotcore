@@ -102,7 +102,7 @@ Happy collecting!
 
 ## Controlling the process from IoT Core
 
-Few commands can be issued to the running ruuvi2iotcore process remotely. By sending one of following commands:
+Few commands can be issued to the running ruuvi2iotcore process remotely. By sending one of following commands through IoT Core:
 
 * ```{"command": "pause"}``` will pause relay of Ruuvi tag beacons to IoT Core (if collecting).
 * ```{"command": "collect"}``` will continue relay of Ruuvi tag beacons to IoT Core (if paused).
