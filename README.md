@@ -31,7 +31,7 @@ sudo setcap 'cap_net_raw,cap_net_admin+eip' /usr/local/bin/ruuvi2iotcore
 Ruuvi2iotcore has two local configuration files:
 
 1. Software configuration file (example file: ruuvi2iotcore.toml) that configures identity and IoT Core registry settings to use.
-2. Logging configuration file (example file: log4rs.yaml) that configures verbosity of logging and the location of log files (if enabled). Log files without absolute path defined are written into in the default working directory of the binary which defaults to users home folder at ~/.local/ruuvi2iotcore/ (Default location can be verified with: ```ruuvi2iotcore --help```)
+2. Logging configuration file (example file: log4rs.yaml) that configures verbosity of logging and the location of log files (if enabled). Log files without absolute path defined are written into in the default working directory of the binary which defaults to users home folder at ~/.local/share/ruuvi2iotcore/ (Default location can be verified with: ```ruuvi2iotcore --help```)
 
 Configuration files are by default searched from users home folder at ~/.config/ruuvi2iotcore/ruuvi2iotcore.toml and ~/.config/ruuvi2iotcore/log4rs.yaml respectively. (Default locations can be verified with: ```ruuvi2iotcore --help```)
 
@@ -45,7 +45,7 @@ Remember to secure your .key file properly and remove all unnecessary user privi
 
 In addition to local keypair you also need a Certificate Authority chain that Google provides and can be download for example with: ```curl -O https://pki.goog/roots.pem```
 
-You configure locations of these three identity files in ruuvi2iotcore.toml. Note: if you do not spesify an absolute path the files are expected to be in the default working directory of the binary which defaults to users home folder at ~/.local/ruuvi2iotcore/ (Default location can be verified with: ```ruuvi2iotcore --help```)
+You configure locations of these three identity files in ruuvi2iotcore.toml. Note: if you do not spesify an absolute path the files are expected to be in the default working directory of the binary which defaults to users home folder at ~/.local/share/ruuvi2iotcore/ (Default location can be verified with: ```ruuvi2iotcore --help```)
 
 ## Setup in Google Cloud
 
