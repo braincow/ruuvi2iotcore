@@ -99,3 +99,12 @@ OPTIONS:
 If all your configuration and certificate files are in default locations just executing the binary itself is enough. Otherwise you might need to adjust the default locations with the command line arguments first.
 
 Happy collecting!
+
+## Controlling the process from IoT Core
+
+Few commands can be issued to the running ruuvi2iotcore process remotely. By sending one of following commands:
+
+* ```{"command": "pause"}``` will pause relay of Ruuvi tag beacons to IoT Core (if collecting).
+* ```{"command": "collect"}``` will continue relay of Ruuvi tag beacons to IoT Core (if paused).
+* ```{"command": "shutdown"}``` will force a clean shutdown (if possible) of the binary. All collection and relay will obviously stop.
+* ```{"command": "reset"}``` will force a clean reset (if possible) of the internal Bluetooth scanner and IoT Core client subthreads. Useful for cases where something is wrong and you do not have console nearby.
