@@ -499,13 +499,15 @@ impl IotCoreClient {
 
         let mut ssl_options_builder = mqtt::SslOptionsBuilder::new();
         ssl_options_builder.ssl_version(mqtt::SslVersion::Tls_1_2);
-        match ssl_options_builder.trust_store(&appconfig.identity.ca_certs) {
-            Ok(options_builder) => options_builder,
-            Err(error) => return Err(
-                eyre!("Unable to use CA certificates in mqtt client")
-                    .with_section(move || error.to_string().header("Reason:"))
-                )
-        };
+        if appconfig.identity.ca_certs.is_some() {
+            match ssl_options_builder.trust_store(appconfig.identity.ca_certs.as_ref().unwrap()) {
+                Ok(options_builder) => options_builder,
+                Err(error) => return Err(
+                    eyre!("Unable to use CA certificates in mqtt client")
+                        .with_section(move || error.to_string().header("Reason:"))
+                    )
+            };    
+        }
         match ssl_options_builder.key_store(&appconfig.identity.public_key) {
             Ok(options_builder) => options_builder,
             Err(error) => return Err(

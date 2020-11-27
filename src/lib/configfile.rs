@@ -6,7 +6,7 @@ use color_eyre::{eyre::eyre, SectionExt, Section, eyre::Report};
 pub struct IdentityConfig {
     pub public_key: String,
     pub private_key: String,
-    pub ca_certs: String,
+    pub ca_certs: Option<String>,
     token_lifetime: Option<u64>
 }
 

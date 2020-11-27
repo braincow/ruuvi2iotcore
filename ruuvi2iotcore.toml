@@ -1,8 +1,7 @@
 [identity]
-# openssl req -x509 -sha256 -nodes -days 365 -newkey rsa:2048 -keyout test.key -out test.crt
 public_key = "test.crt"
 private_key = "test.key"
-ca_certs = "roots.pem"
+#ca_certs = "roots.pem"
 token_lifetime = 3600
 
 [iotcore]
