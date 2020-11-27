@@ -59,7 +59,7 @@ Refer to Google Cloud Internet Of Things (IoT) Core [documentation](https://clou
 1. Enable IoT Core API if not yet enabled.
 2. Create a registry into IoT Core (if not yet created)
 3. Create a gateway into the selected registry. For authentication use the RS256_X509. Upload or copy&paste the public key (certificate) to IoT Core you created earlier.
-4. Using the file example_config.json as a template update the configuration of the gateway:
+4. Using the file example_gateway_config.json as a template update the configuration of the gateway:
     * To "tags" configure list of Ruuvi tag mac addresses and IoT Core device_id's associated with those addresses.
     * If "collecting" is true will ruuvi2iotcore automatically start collecting beacons and relaying them. If it is false ruuvi2iotcore will wait for COLLECT command before starting collecting and relaying.
     * Optionally: Also "event_subfolder" in most cases will be empty or if you wish to use one you also need to set up the topic subfolder in IoT Core first. This can safely be omitted if not configured.

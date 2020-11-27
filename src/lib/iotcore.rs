@@ -255,7 +255,7 @@ impl IotCoreClient {
             let mut newconfig = collectconfig.clone();
             newconfig.collecting = enabled;
             self.collectconfig = Some(newconfig);
-            self.publish_message(self.state_topic.clone(), json!(&self.collectconfig).to_string().as_bytes().to_vec())?;
+            self.publish_message(self.state_topic.clone(), serde_json::to_vec(&self.collectconfig).unwrap())?;
         } else {
             error!("No collect config defined. Unable to change collect state to: {}", enabled);
         }
@@ -424,12 +424,12 @@ impl IotCoreClient {
                         if self.collectconfig.as_ref().unwrap().collecting {
                             trace!("Message queue size for '{}': {}/{}", address, queue.len(), self.collectconfig.as_ref().unwrap().collection_size());
                             if &self.collectconfig.as_ref().unwrap().collection_size() <= &1 {
-                                match self.publish_message(topic, json!(msg).to_string().as_bytes().to_vec()) {
+                                match self.publish_message(topic, serde_json::to_vec(&msg).unwrap()) {
                                     Ok(_) => trace!("iotcore publish message: {:?}", msg),
                                     Err(error) => error!("Error on publishing message to MQTT: '{}'. Will retry.", error)
                                 };
                             } else if queue.len() >= self.collectconfig.as_ref().unwrap().collection_size() {
-                                match self.publish_message(topic, json!(queue).to_string().as_bytes().to_vec()) {
+                                match self.publish_message(topic, serde_json::to_vec(&queue).unwrap()) {
                                     Ok(_) => trace!("iotcore publish message queue: {:?}", queue),
                                     Err(error) => error!("Error on publishing message queue to MQTT: '{}'. Will retry.", error)
                                 };
