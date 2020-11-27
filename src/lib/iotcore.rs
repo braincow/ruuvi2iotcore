@@ -79,6 +79,7 @@ pub struct IotCoreClient {
     command_topic_root: String,
     consumer: Receiver<Option<mqtt::message::Message>>,
     collectconfig: Option<CollectConfig>,
+    last_pause: Option<Instant>,
 }
 
 impl IotCoreClient {
@@ -154,15 +155,33 @@ impl IotCoreClient {
         Ok(())
     }
 
-    fn enable_collecting(&mut self, enabled: bool) -> Result<(), Report> {
+    fn set_collecting_state(&mut self, enabled: bool) -> Result<(), Report> {
         if let Some(collectconfig) = &self.collectconfig {
             let mut newconfig = collectconfig.clone();
             newconfig.collecting = enabled;
             self.collectconfig = Some(newconfig);
             self.publish_message(self.state_topic.clone(), json!(&self.collectconfig).to_string().as_bytes().to_vec())?;
+        } else {
+            error!("No collect config defined. Unable to change collect state to: {}", enabled);
         }
 
         Ok(())
+    }
+
+    fn enable_collecting(&mut self) -> Result<(), Report> {
+        let retval = self.set_collecting_state(true);
+        if retval.is_ok() {
+            self.last_pause = None;
+        }
+        retval
+    }
+
+    fn disable_collecting(&mut self) -> Result<(), Report> {
+        let retval = self.set_collecting_state(false);
+        if retval.is_ok() {
+            self.last_pause = Some(Instant::now());
+        }
+        retval
     }
 
     pub fn start_client(&mut self) -> Result<bool, Report> {
@@ -213,8 +232,11 @@ impl IotCoreClient {
                                     None => format!("/devices/{}/events", self.device_id)
                                 };
                                 self.events_topic = Some(events_topic);
-                                // send new state back after activating the configuration
-                                self.publish_message(self.state_topic.clone(), json!(&self.collectconfig).to_string().as_bytes().to_vec())?;
+                                if !&self.collectconfig.as_ref().unwrap().collecting {
+                                    self.disable_collecting()?;
+                                } else {
+                                    self.enable_collecting()?;
+                                }
                                 // send config to CNC channel
                                 self.cnc_sender.send(IOTCoreCNCMessageKind::CONFIG(self.collectconfig.clone())).unwrap(); // TODO: fix unwrap    
                                 debug!("New collect config activated is '{:?}'", self.collectconfig);
@@ -238,11 +260,11 @@ impl IotCoreClient {
                                 match command.command {
                                     CNCCommand::COLLECT => {
                                         info!("CNC command received: COLLECT beacons");
-                                        self.enable_collecting(true)?;
+                                        self.enable_collecting()?;
                                     },
                                     CNCCommand::PAUSE => {
                                         warn!("CNC command received: PAUSE collecting beacons");
-                                        self.enable_collecting(false)?;
+                                        self.disable_collecting()?;
                                     },
                                     CNCCommand::SHUTDOWN => {
                                         warn!("CNC command received: SHUTDOWN software");
@@ -295,7 +317,7 @@ impl IotCoreClient {
                         collect = collectconfig.collecting;
                     }
                     // submit the beacon to iotcore
-                    if publish && collect && self.collectconfig.is_some() {
+                    if publish && collect {
                         if &self.collectconfig.as_ref().unwrap().collection_size() <= &1 {
                             match self.publish_message(self.events_topic.as_ref().unwrap().to_string(), json!(msg).to_string().as_bytes().to_vec()) {
                                 Ok(_) => trace!("iotcore publish message: {:?}", message_queue),
@@ -309,6 +331,17 @@ impl IotCoreClient {
                             message_queue = Vec::new();
                         } else {
                             message_queue.push(msg);
+                        }
+                    } else if !collect {
+                        if let Some(last_pause) = self.last_pause {
+                            if last_pause.elapsed() >= Duration::from_secs(4*60) {
+                                // we are paused, so to avoid timeout due to lack of published messages to broker we occasionally will need to
+                                //  publish our state to avoid that. as a short hand we essentially do a pause again.
+                                self.disable_collecting()?;
+                                warn!("Beacon collection is paused.");
+                            }
+                        } else {
+                            error!("Beacon collection is paused, but paused state was not established correctly.")
                         }
                     }
                     trace!("Message queue size: {}/{}", message_queue.len(), self.collectconfig.as_ref().unwrap().collection_size());
@@ -381,7 +414,7 @@ impl IotCoreClient {
             .user_name("not_used")
             .password(jwt_token)
             .ssl_options(ssl_options.clone())
-            .keep_alive_interval(Duration::from_secs(45))
+            .keep_alive_interval(Duration::from_secs(5*60))
             .finalize();
 
         // thru mspc relay incoming messages from cnc topics
@@ -403,6 +436,7 @@ impl IotCoreClient {
             command_topic_root: format!("/devices/{}/commands", device_id),
             consumer: consumer,
             collectconfig: None,
+            last_pause: None
         })
     }
 }
