@@ -285,8 +285,10 @@ impl IotCoreClient {
             None => Vec::new()
         };
         for tag in tags.iter() {
-            self.publish_message(format!("/devices/{}/attach", tag.device_id), "{}".as_bytes().to_vec())?;
-            info!("Associated Ruuvi tag: {} ({})", tag.device_id, tag.addr_as_hex_string());
+            match self.publish_message(format!("/devices/{}/attach", tag.device_id), "{}".as_bytes().to_vec()) {
+                Ok(_) => info!("Associated Ruuvi tag: {} ({})", tag.device_id, tag.addr_as_hex_string()),
+                Err(error) => error!("Error while associating tag {} ({}): {}", tag.device_id, tag.addr_as_hex_string(), error)
+            };
         }
 
         Ok(())
