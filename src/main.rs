@@ -26,7 +26,7 @@ fn main() -> Result<(), Report> {
 
     // project dirs are located somewhere in the system based on arch and os
     let project_dirs = ProjectDirs::from("me", "bcow", env!("CARGO_PKG_NAME")).unwrap();
-    let default_config_file_path = Path::new(project_dirs.config_dir()).join(format!("{}.toml", env!("CARGO_PKG_NAME")));
+    let default_config_file_path = Path::new(project_dirs.config_dir()).join(format!("{}.yaml", env!("CARGO_PKG_NAME")));
     let default_logging_config_file_path = Path::new(project_dirs.config_dir()).join("log4rs.yaml");
     let default_working_dir_path = Path::new(project_dirs.data_dir());
 

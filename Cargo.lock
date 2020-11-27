@@ -1593,6 +1593,7 @@ dependencies = [
  "paho-mqtt",
  "serde",
  "serde_json",
+ "serde_yaml",
  "structview",
  "toml",
 ]

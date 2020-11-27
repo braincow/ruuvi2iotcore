@@ -47,15 +47,15 @@ pub struct AppConfig {
 
 impl AppConfig {
     pub fn read_config(config_file_path: &Path) -> Result<AppConfig, Report> {
-        let config_toml = match fs::read_to_string(config_file_path) {
-            Ok(toml) => toml,
+        let config_yaml = match fs::read_to_string(config_file_path) {
+            Ok(yaml) => yaml,
             Err(error) => return Err(
                 eyre!("Unable to read config file")
                     .with_section(move || config_file_path.to_string_lossy().trim().to_string().header("File name:"))
                     .with_section(move || error.to_string().header("Reason:"))
                 )
         };
-        let config: AppConfig = match toml::from_str(&config_toml) {
+        let config: AppConfig = match serde_yaml::from_str(&config_yaml) {
             Ok(config) => config,
             Err(error) => return Err(
                 eyre!("Unable to parse config file")

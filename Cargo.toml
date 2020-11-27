@@ -25,6 +25,7 @@ chrono = { version = "0.4.19", features = ["serde"] }
 paho-mqtt = "0.8.0"
 log4rs = "0.13.0"
 eui48 = "1.1.0"
+serde_yaml = "0.8.14"
 
 [dev-dependencies]
 hex = "0.4.2"
