@@ -212,16 +212,20 @@ impl BluetoothScanner {
                     },
                     IOTCoreCNCMessageKind::CONFIG(collectconfig) => match collectconfig {
                         Some(collectconfig) => {
+                            let new_adapter_index = match collectconfig.bluetooth {
+                                Some(bluetooth) => bluetooth.adapter_index,
+                                None => 0
+                            };
                             if self.adapter_index.is_none() {
                                 trace!("Associate Bluetooth adapter for the first time");
                                 // associate the adapter
-                                self.adapter_index = Some(collectconfig.bluetooth.adapter_index);
+                                self.adapter_index = Some(new_adapter_index);
                                 self.reserve_adapter()?;
-                            } else if self.adapter_index != Some(collectconfig.bluetooth.adapter_index) {
+                            } else if self.adapter_index != Some(new_adapter_index) {
                                 //  store the adapter_index and exit with boolean value that causes main loop
                                 //  to restart us cleanly
                                 self.stop_scan()?;
-                                self.adapter_index = Some(collectconfig.bluetooth.adapter_index);
+                                self.adapter_index = Some(new_adapter_index);
                                 trace!("Restarting through main loop to finalize change of associated Bluetooth adapter");
                                 return Ok(false)
                             } else {

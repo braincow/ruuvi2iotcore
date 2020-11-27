@@ -145,7 +145,7 @@ pub struct CollectConfig {
     collecting: bool,
     event_subfolder: Option<String>,
     collection_size: Option<usize>,
-    pub bluetooth: BluetoothConfig
+    pub bluetooth: Option<BluetoothConfig>
 }
 impl CollectConfig {
     pub fn collection_size(&self) -> usize {
