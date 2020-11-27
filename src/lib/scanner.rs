@@ -7,11 +7,12 @@ use structview::View;
 use chrono;
 use serde::Serialize;
 use std::{time, thread};
+use std::clone::Clone;
 
 use crate::lib::ruuvi::RuuviTagDataFormat5;
 use crate::lib::iotcore::{IOTCoreCNCMessageKind, CNCCommand};
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct RuuviBluetoothBeacon {
     pub data: RuuviTagDataFormat5,
     pub timestamp: chrono::DateTime<chrono::Utc>,

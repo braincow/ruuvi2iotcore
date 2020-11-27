@@ -6,7 +6,7 @@ ca_certs = "roots.pem"
 token_lifetime = 3600
 
 [iotcore]
-device_id = "dev"
+device_id = "ruuvitag-dev"
 project_id = "bcow-me"
 region = "europe-west1"
 registry = "ruuvi2iotcore"

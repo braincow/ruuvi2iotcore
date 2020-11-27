@@ -1,11 +1,13 @@
 {
-    "addresses": [
-        "AA:BB:CC:DD:EE:FF"
+    "tags": [
+        { 
+            "device_id": "fubar",
+            "address": "AB:BA:AB:BA:AB:BA"
+        }
     ],
     "collecting": true,
-    "mode":"blacklist",
     "event_subfolder": "dev",
-    "collection_size": 10,
+    "collection_size": 3,
     "bluetooth": {
         "adapter_index": 0
     }
