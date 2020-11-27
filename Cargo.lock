@@ -1533,7 +1533,7 @@ dependencies = [
 
 [[package]]
 name = "ruuvi2iotcore"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "btleplug",
  "chrono",
