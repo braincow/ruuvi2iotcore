@@ -44,7 +44,7 @@ openssl req -x509 -sha256 -nodes -days 365 -newkey rsa:2048 -keyout ruuvi2iotcor
 
 Remember to secure your .key file properly and remove all unnecessary user privileges from it.
 
-In addition to local keypair, you also need a Certificate Authority chain that Google provides and can be download for example with: ```curl -O https://pki.goog/roots.pem```
+(In addition to local keypair, you may optionally also define Certificate Authority chain file that Google provides and can be download for example with: ```curl -O https://pki.goog/roots.pem```)
 
 You configure the locations of these three identity files in ruuvi2iotcore.toml. Note: if you do not specify an absolute path the files are expected to be in the default working directory of the binary which defaults to users home folder at ~/.local/share/ruuvi2iotcore/ (Default location can be verified with: ```ruuvi2iotcore --help```)
 
@@ -58,13 +58,18 @@ Refer to Google Cloud Internet Of Things (IoT) Core [documentation](https://clou
 
 1. Enable IoT Core API if not yet enabled.
 2. Create a registry into IoT Core (if not yet created)
-3. Create a device into the selected registry. For authentication use the RS256_X509. Upload or copy&paste the public key (certificate) to IoT Core you created earlier.
-4. Using the file example_config.json as a template update the configuration of the device:
-    * Select either blacklist or whitelist mode of operation and list the mac addresses of your Ruuvi tags you want to include or exclude from forwarding.
-    * Only if you do not want your ruuvi2iotcore to automatically start the collection and forwarding of the beacons should you change the collecting mode to false by default.
-    * Also event_subfolder in production should be empty or if you wish to use one you also need to set up the topic subfolder in IoT Core first.
-    * collection_size is a buffer that dictates how many beacons should be collected before they are relayed to IoT Core; 0 or 1 will send every beacon individually and larger value will collect as many beacons first before publishing them via MQTT.
-5. bluetooth_config and its adapter_index define a value upwards from 0 which is the index of installed Bluetooth adapters on the hardware you are running ruuvitag2iotcore on. Normally you do not need to change this.
+3. Create a gateway into the selected registry. For authentication use the RS256_X509. Upload or copy&paste the public key (certificate) to IoT Core you created earlier.
+4. Using the file example_config.json as a template update the configuration of the gateway:
+    * To "tags" configure list of Ruuvi tag mac addresses and IoT Core device_id's associated with those addresses.
+    * If "collecting" is true will ruuvi2iotcore automatically start collecting beacons and relaying them. If it is false ruuvi2iotcore will wait for COLLECT command before starting collecting and relaying.
+    * Optionally: Also "event_subfolder" in most cases will be empty or if you wish to use one you also need to set up the topic subfolder in IoT Core first. This can safely be omitted if not configured.
+    * Optionally: Field "collection_size" is a buffer that dictates how many beacons should be collected before they are relayed to IoT Core; 0 or 1 will send every beacon individually and larger value will collect as many beacons first before publishing them via MQTT.
+5. Optionally: bluetooth_config and its adapter_index define a value upwards from 0 which is the index of installed Bluetooth adapters on the hardware you are running ruuvitag2iotcore on. Normally you do not need to change this and bluetooth_config can also be omitted.
+
+Once you have configured your gateway proceed to create devices into the registry:
+
+1. Name of your device(s) need to be identical with the client_id's you configured into the gateways configuration in previous step.
+2. Finally bind your device(s) to the registry through the gateway configuration screen.
 
 ### Setup in pub/sub
 
@@ -80,7 +85,7 @@ The help page is always available with the ```--help``` flag:
 
 ```sh
 ❯ ./target/debug/ruuvi2iotcore --help
-ruuvi2iotcore 0.1.1
+ruuvi2iotcore x.y.z
 Antti Peltonen <antti.peltonen@iki.fi>
 Ruuvi tag beacons to GCP iot core
 
