@@ -80,6 +80,7 @@ pub struct IotCoreClient {
     consumer: Receiver<Option<mqtt::message::Message>>,
     collectconfig: Option<CollectConfig>,
     last_pause: Option<Instant>,
+    last_seen: Instant,
 }
 
 impl IotCoreClient {
@@ -195,13 +196,13 @@ impl IotCoreClient {
         
         let mut message_queue: Vec<RuuviBluetoothBeacon> = Vec::new();
 
-        let mut last_seen = Instant::now();
+        self.last_seen = Instant::now();
 
         // loop messages and wait for a ready signal
         loop {
             // check that we are actually doing work, and if not then issue a restart
             //  we have 60 seconds here to facilitate possible restart of the bluetooth stack first
-            if last_seen.elapsed() >= Duration::from_secs(58) {
+            if self.last_seen.elapsed() >= Duration::from_secs(58) {
                 warn!("No beacons detected for 58 seconds. Issuing thread clean restart.");
                 // exit cleanly and issue restart from main loop
                 if self.client.is_connected() {
@@ -289,7 +290,7 @@ impl IotCoreClient {
             match self.channel_receiver.try_recv() {
                 Ok(msg) => {
                     // update the last_seen counter to verify internally that we are doing work
-                    last_seen = Instant::now();
+                    self.last_seen = Instant::now();
                     // check against collectconfig if this beacon shall be submitted
                     let publish = match &self.collectconfig {
                         Some(collectconfig) => {
@@ -436,7 +437,8 @@ impl IotCoreClient {
             command_topic_root: format!("/devices/{}/commands", device_id),
             consumer: consumer,
             collectconfig: None,
-            last_pause: None
+            last_pause: None,
+            last_seen: Instant::now(),
         })
     }
 }
