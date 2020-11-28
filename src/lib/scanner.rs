@@ -170,20 +170,26 @@ impl BluetoothScanner {
                 },
                 Err(error) => {
                     error!("{}", error);
-                    self.release_adapter()?;
+                    match self.release_adapter() {
+                        Ok(_) => {},
+                        Err(error) => error!("Compound error while trying to recover from unclean restart: {}", error)
+                    }
+                    self.bt_central = None;
+                    self.bt_receiver = None;
                     self.adapter_index = None;
+                    warn!("Scanner internal configuration reset now forced. Expecting RESET command or new configuration from MQTT broker.");
                     // force exit to main loop and restart in clean state
                     return Ok(false);
                 }
-            };           
+            };
         }
 
         let mut last_seen = time::Instant::now();
 
         loop {
             // check that we are actually doing work, and if not then issue a restart
-            //  we should receive multiple beacons with in 30 seconds
-            if last_seen.elapsed() >= time::Duration::from_secs(33) {
+            //  we should receive multiple beacons within 30 seconds
+            if self.adapter_index.is_some() && last_seen.elapsed() >= time::Duration::from_secs(33) {
                 warn!("No beacons detected for 33 seconds. Issuing thread clean restart.");
                 // exit cleanly and issue restart from main loop
                 self.release_adapter()?;

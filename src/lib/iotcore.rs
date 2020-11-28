@@ -274,6 +274,9 @@ impl IotCoreClient {
                                     CNCCommand::RESET => {
                                         warn!("CNC command received: RESET software");
                                         self.disconnect()?;
+                                        // send the current collect configuration to cnc channel so that
+                                        //  bluetooth thread can use it after it recovers
+                                        self.cnc_sender.send(IOTCoreCNCMessageKind::CONFIG(self.collectconfig.clone())).unwrap(); // TODO: fix unwrap
                                         return Ok(false)
                                     },
                                 };
