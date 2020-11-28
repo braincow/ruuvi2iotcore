@@ -1,6 +1,4 @@
 use serde::{Serialize, Deserialize};
-use serde::de::{self, Deserializer, Visitor, SeqAccess, MapAccess};
-use serde::ser::{Serializer, SerializeStruct};
 use color_eyre::{eyre::eyre, SectionExt, Section, eyre::Report};
 use crossbeam::channel;
 use paho_mqtt as mqtt;
@@ -9,7 +7,6 @@ use std::time::{Instant, Duration};
 use std::{time, thread};
 use std::sync::mpsc::Receiver;
 use std::clone::Clone;
-use std::fmt;
 use std::str::FromStr;
 use std::collections::HashMap;
 
@@ -45,103 +42,8 @@ pub struct BluetoothConfig {
     pub adapter_index: usize
 }
 
-#[derive(Debug,Clone,PartialEq,PartialOrd)]
-pub struct RuuviTag {
-    device_id: String,
-    address: MacAddress,
-}
-impl RuuviTag {
-    pub fn addr_as_hex_string(&self) -> String {
-        self.address.to_string(MacAddressFormat::HexString)
-    }
-}
-impl Serialize for RuuviTag {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut state = serializer.serialize_struct("RuuviTag", 2)?;
-        state.serialize_field("name", &self.device_id)?;
-        state.serialize_field("address", &self.addr_as_hex_string())?;
-        state.end()
-    }
-}
-impl<'de> Deserialize<'de> for RuuviTag {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(field_identifier, rename_all = "lowercase")]
-        enum Field { 
-            #[serde(alias = "device_id")]
-            DeviceId,
-            Address
-        };
-
-        struct RuuviTagVisitor;
-
-        impl<'de> Visitor<'de> for RuuviTagVisitor {
-            type Value = RuuviTag;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("struct RuuviTag")
-            }
-
-            fn visit_seq<V>(self, mut seq: V) -> Result<RuuviTag, V::Error>
-            where
-                V: SeqAccess<'de>,
-            {
-                let device_id = seq.next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(0, &self))?;
-                let address = seq.next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(1, &self))?;
-
-                Ok(RuuviTag{
-                    device_id: device_id,
-                    address: MacAddress::from_str(address).unwrap() //TODO: fix unwrap https://serde.rs/deserialize-struct.html
-                })
-            }
-
-            fn visit_map<V>(self, mut map: V) -> Result<RuuviTag, V::Error>
-            where
-                V: MapAccess<'de>,
-            {
-                let mut device_id = None;
-                let mut address = None;
-                while let Some(key) = map.next_key()? {
-                    match key {
-                        Field::DeviceId => {
-                            if device_id.is_some() {
-                                return Err(de::Error::duplicate_field("name"));
-                            }
-                            device_id = Some(map.next_value()?);
-                        }
-                        Field::Address => {
-                            if address.is_some() {
-                                return Err(de::Error::duplicate_field("address"));
-                            }
-                            address = Some(map.next_value()?);
-                        }
-                    }
-                }
-                let device_id = device_id.ok_or_else(|| de::Error::missing_field("name"))?;
-                let address = address.ok_or_else(|| de::Error::missing_field("address"))?;
-                Ok(RuuviTag{
-                    device_id: device_id,
-                    address: MacAddress::from_str(address).unwrap() //TODO: fix unwrap https://serde.rs/deserialize-struct.html
-                })
-            }
-        }
-
-        const FIELDS: &'static [&'static str] = &["name", "address"];
-        deserializer.deserialize_struct("RuuviTag", FIELDS, RuuviTagVisitor)
-    }
-}
-
 #[derive(Debug,Deserialize,Serialize,Clone,PartialEq,PartialOrd)]
 pub struct CollectConfig {
-    tags: Vec<RuuviTag>,
     collecting: bool,
     event_subfolder: Option<String>,
     collection_size: Option<usize>,
@@ -170,6 +72,7 @@ pub struct IotCoreClient {
     collectconfig: Option<CollectConfig>,
     last_pause: Option<Instant>,
     last_seen: Instant,
+    discovered_tags: Vec<MacAddress>
 }
 
 impl IotCoreClient {
@@ -206,8 +109,6 @@ impl IotCoreClient {
     fn disconnect(&mut self) -> Result<(), Report> {
         if self.client.is_connected() {
             warn!("Disconnecting from MQTT broker");
-            // send deassociation control messages for all the devices under our "control"
-            self.detach_tags()?;
         }
         match self.client.disconnect(None) {
             Ok(_) => Ok(()),
@@ -244,8 +145,7 @@ impl IotCoreClient {
                 )
         }
 
-        // send association control messages for all the devices under our "control"
-        self.attach_tags()?;
+        self.reattach_discovered_devices();
 
         Ok(())
     }
@@ -277,34 +177,6 @@ impl IotCoreClient {
             self.last_pause = Some(Instant::now());
         }
         retval
-    }
-
-    fn attach_tags(&mut self) -> Result<(), Report> {
-        let tags = match self.collectconfig.as_ref() {
-            Some(config) => config.tags.clone(),
-            None => Vec::new()
-        };
-        for tag in tags.iter() {
-            match self.publish_message(format!("/devices/{}/attach", tag.device_id), "{}".as_bytes().to_vec()) {
-                Ok(_) => info!("Associated Ruuvi tag: {} ({})", tag.device_id, tag.addr_as_hex_string()),
-                Err(error) => error!("Error while associating tag {} ({}): {}", tag.device_id, tag.addr_as_hex_string(), error)
-            };
-        }
-
-        Ok(())
-    }
-
-    fn detach_tags(&mut self) -> Result<(), Report> {
-        let tags = match self.collectconfig.as_ref() {
-            Some(config) => config.tags.clone(),
-            None => Vec::new()
-        };
-        for tag in tags.iter() {
-            self.publish_message(format!("/devices/{}/detach", tag.device_id), "{}".as_bytes().to_vec())?;
-            debug!("De-associated Ruuvi tag: {} ({})", tag.device_id, tag.addr_as_hex_string());
-        }
-
-        Ok(())
     }
 
     pub fn start_client(&mut self) -> Result<bool, Report> {
@@ -356,8 +228,6 @@ impl IotCoreClient {
                                 } else {
                                     self.enable_collecting()?;
                                 }
-                                // send association control messages for all the devices under our "control"
-                                self.attach_tags()?;
                                 // send config to CNC channel
                                 self.cnc_sender.send(IOTCoreCNCMessageKind::CONFIG(self.collectconfig.clone())).unwrap(); // TODO: fix unwrap    
                             } else {
@@ -388,6 +258,7 @@ impl IotCoreClient {
                                     },
                                     CNCCommand::SHUTDOWN => {
                                         warn!("CNC command received: SHUTDOWN software");
+                                        self.detach_devices();
                                         break;
                                     },
                                     CNCCommand::RESET => {
@@ -415,23 +286,25 @@ impl IotCoreClient {
                     self.last_seen = Instant::now();
 
                     let address = MacAddress::from_str(&msg.address).unwrap();
-                    let topic = self.device_event_topic(&address);
+
+                    let mut queue: Vec<RuuviBluetoothBeacon> = match message_queue.get(&address) {
+                        Some(queue) => queue.to_vec(),
+                        None => vec![]
+                    };
 
                     // submit the beacon to iotcore if collecting them is enabled
-                    if let Some(topic) = topic {
-                        let mut queue: Vec<RuuviBluetoothBeacon> = match message_queue.get(&address) {
-                            Some(queue) => queue.to_vec(),
-                            None => vec![]
-                        };
-    
-                        if self.collectconfig.as_ref().unwrap().collecting {
-                            trace!("Message queue size for '{}': {}/{}", address, queue.len(), self.collectconfig.as_ref().unwrap().collection_size());
+                    if self.collectconfig.as_ref().unwrap().collecting {
+                        if self.try_attach_device(&address) {
+                            let topic = self.device_event_topic(&address).unwrap();
+
                             if &self.collectconfig.as_ref().unwrap().collection_size() <= &1 {
                                 match self.publish_message(topic, serde_json::to_vec(&msg).unwrap()) {
                                     Ok(_) => trace!("iotcore publish message: {:?}", msg),
                                     Err(error) => error!("Error on publishing message to MQTT: '{}'. Will retry.", error)
                                 };
-                            } else if queue.len() >= self.collectconfig.as_ref().unwrap().collection_size() {
+                            } else if queue.len() >= self.collectconfig.as_ref().unwrap().collection_size() - 1 {
+                                queue.push(msg);
+                                trace!("Message queue size for '{}': {}/{}", address, queue.len(), self.collectconfig.as_ref().unwrap().collection_size());
                                 match self.publish_message(topic, serde_json::to_vec(&queue).unwrap()) {
                                     Ok(_) => trace!("iotcore publish message queue: {:?}", queue),
                                     Err(error) => error!("Error on publishing message queue to MQTT: '{}'. Will retry.", error)
@@ -439,21 +312,27 @@ impl IotCoreClient {
                                 // empty the message queue
                                 message_queue.remove(&address);
                             } else {
-                                // replace in hashmap the message queue with new extended one
+                                // add beacon to queue
                                 queue.push(msg);
+                                trace!("Message queue size for '{}': {}/{}", address, queue.len(), self.collectconfig.as_ref().unwrap().collection_size());
+                                // replace in hashmap the message queue with new extended one
                                 message_queue.insert(address, queue.to_vec());
                             }
                         } else {
-                            if let Some(last_pause) = self.last_pause {
-                                if last_pause.elapsed() >= Duration::from_secs(4*60) {
-                                    // we are paused, so to avoid timeout due to lack of published messages to broker we occasionally will need to
-                                    //  publish our state to avoid that. as a short hand we essentially do a pause again.
-                                    self.disable_collecting()?;
-                                    warn!("Beacon collection is paused.");
-                                }
-                            } else {
-                                error!("Beacon collection is paused, but paused state was not established correctly.")
+                            if queue.len() > 0 {
+                                message_queue.remove(&address);
                             }
+                        }
+                    } else {
+                        if let Some(last_pause) = self.last_pause {
+                            if last_pause.elapsed() >= Duration::from_secs(4*60) {
+                                // we are paused, so to avoid timeout due to lack of published messages to broker we occasionally will need to
+                                //  publish our state to avoid that. as a short hand we essentially do a pause again.
+                                self.disable_collecting()?;
+                                warn!("Beacon collection is paused.");
+                            }
+                        } else {
+                            error!("Beacon collection is paused, but paused state was not established correctly.")
                         }
                     }
                 },
@@ -469,17 +348,73 @@ impl IotCoreClient {
         Ok(true)
     }
 
-    fn device_event_topic(&self, address: &MacAddress) -> Option<String> {
-        let tags = self.collectconfig.as_ref().unwrap().tags.clone();
-        for tag in tags.iter() {
-            if &tag.address == address {
-                return match &self.collectconfig.as_ref().unwrap().event_subfolder {
-                    Some(subfolder) => Some(format!("/devices/{}/events/{}", tag.device_id, subfolder)),
-                    None => Some(format!("/devices/{}/events", tag.device_id))
-                };
+    fn try_attach_device(&mut self, address: &MacAddress) -> bool {
+        if self.client.is_connected() && !self.discovered_tags.contains(address) {
+            // try to attach a newly discovered beacon owner to this gateway
+            //  (succesful only if bound)
+            match self.publish_message(self.device_attach_topic(&address), "{}".to_string().as_bytes().to_vec()) {
+                Ok(_) => {
+                    info!("Discovered Ruuvi tag ({}) attached to gateway succesfully.", address.to_string(MacAddressFormat::Canonical).to_uppercase());
+                    self.discovered_tags.push(*address);
+                },
+                Err(error) => {
+                    warn!("Discovered Ruuvi tag ({}) attachment to gateway failed (possibly not bound): {}", 
+                        address.to_string(MacAddressFormat::Canonical).to_uppercase(),
+                        error);
+                    return false;
+                }
+            };
+        }
+        true
+    }
+
+    fn reattach_discovered_devices(&mut self) {
+        if self.client.is_connected() {
+            for tag in self.discovered_tags.clone().iter() {
+                match self.publish_message(self.device_attach_topic(&tag), "{}".to_string().as_bytes().to_vec()) {
+                    Ok(_) => info!("Discovered Ruuvi tag ({}) reattached to gateway succesfully.", tag.to_string(MacAddressFormat::Canonical).to_uppercase()),
+                    Err(error) => {
+                        // remove the tag from associated list as it failed this time around
+                        self.discovered_tags.retain(|x| *x != *tag);
+                        warn!("Discovered Ruuvi tag ({}) reattached to gateway failed: {}", 
+                            tag.to_string(MacAddressFormat::Canonical).to_uppercase(),
+                            error);
+                    }
+                }
             }
         }
-        None
+    }
+
+    fn detach_devices(&mut self) {
+        if self.client.is_connected() {
+            for tag in self.discovered_tags.clone().iter() {
+                match self.publish_message(self.device_detach_topic(&tag), "{}".to_string().as_bytes().to_vec()) {
+                    Ok(_) => info!("Discovered Ruuvi tag ({}) detached from gateway succesfully.", tag.to_string(MacAddressFormat::Canonical).to_uppercase()),
+                    Err(error) => warn!("Discovered Ruuvi tag ({}) detachment from gateway failed: {}", 
+                        tag.to_string(MacAddressFormat::Canonical).to_uppercase(),
+                        error)
+                }
+            }
+        }
+    }
+
+    fn device_event_topic(&self, address: &MacAddress) -> Option<String> {
+        let mut retval: Option<String> = None;
+        if let Some(collectconfig) = &self.collectconfig {
+            retval = match &collectconfig.event_subfolder {
+                Some(folder) => Some(format!("/devices/{}/events/{}", address.to_string(MacAddressFormat::Canonical).to_uppercase(), folder)),
+                None => Some(format!("/devices/{}/events", address.to_string(MacAddressFormat::Canonical).to_uppercase()))
+            }
+        }
+        retval
+    }
+
+    fn device_attach_topic(&self, address: &MacAddress) -> String {
+        format!("/devices/{}/attach", address.to_string(MacAddressFormat::Canonical).to_uppercase())
+    }
+
+    fn device_detach_topic(&self, address: &MacAddress) -> String {
+        format!("/devices/{}/detach", address.to_string(MacAddressFormat::Canonical).to_uppercase())
     }
 
     pub fn build(appconfig: &AppConfig, r: &channel::Receiver<RuuviBluetoothBeacon>, cnc_s: &channel::Sender<IOTCoreCNCMessageKind>) -> Result<IotCoreClient, Report> {
@@ -562,6 +497,7 @@ impl IotCoreClient {
             collectconfig: None,
             last_pause: None,
             last_seen: Instant::now(),
+            discovered_tags: Vec::new()
         })
     }
 }

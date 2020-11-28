@@ -1,10 +1,4 @@
 {
-    "tags": [
-        { 
-            "device_id": "fubar",
-            "address": "AB:BA:AB:BA:AB:BA"
-        }
-    ],
     "collecting": true,
     "event_subfolder": "dev",
     "collection_size": 3,

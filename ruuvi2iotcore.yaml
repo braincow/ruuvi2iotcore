@@ -2,12 +2,12 @@ identity:
   public_key: "test.crt"
   private_key: "test.key"
   #ca_certs: "roots.pem"
-  token_lifetime: 3600
+  token_lifetime: 120
 
 iotcore:
-  device_id: "ruuvitag-dev"
+  device_id: "home-gateway-dev"
   project_id: "bcow-me"
   region: "europe-west1"
-  registry: "ruuvi2iotcore"
+  registry: "ruuvi2iotcore-dev"
 
 # eof
