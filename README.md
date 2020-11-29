@@ -117,3 +117,11 @@ Few commands can be issued to the running ruuvi2iotcore process remotely. By sen
 * ```{"command": "collect"}``` will continue relay of Ruuvi tag beacons to IoT Core (if paused).
 * ```{"command": "shutdown"}``` will force a clean shutdown (if possible) of the binary. All collection and relay will stop.
 * ```{"command": "reset"}``` will force a clean reset (if possible) of the internal Bluetooth scanner and IoT Core client subthreads. Useful for cases where something is wrong and you do not have access to your ruuvi2iotcore installation otherwise.
+
+### Binding and unbinding devices while ruuvi2iotcore is running
+
+If you bind a new Ruuvi tag to the gateway while gateway is running once a first beacon transmit (or a collection of them) is sent to IoT core the device will be associated with the gateway immediately.
+
+If you have Ruuvi tags that are not bound to gateway you will see these as warnings in ruuvi2iotcore application log (if logging is enabled and has sufficient verbosity).
+
+If you unbind an device from the gateway while gateway is running beacons from that Ruuvi tag device will be relayd as previously until new disconnect/connect cycle happens during MQTT authentication (because of token expiration). You can also force a new disconnect/connect cycle by sending RESET command (see section above about remote commands) to the gateway process.
