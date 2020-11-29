@@ -72,7 +72,7 @@ pub struct IotCoreClient {
     collectconfig: Option<CollectConfig>,
     last_pause: Option<Instant>,
     last_seen: Instant,
-    discovered_tags: Vec<MacAddress>
+    discovered_tags: HashMap<MacAddress, Vec<RuuviBluetoothBeacon>>,
 }
 
 impl IotCoreClient {
@@ -200,10 +200,7 @@ impl IotCoreClient {
         }
         self.connect()?;
         
-        let mut message_queue: HashMap<MacAddress, Vec<RuuviBluetoothBeacon>> = HashMap::new();
-
         self.last_seen = Instant::now();
-
         // loop messages and wait for a ready signal
         loop {
             // check that we are actually doing work, and if not then issue a restart
@@ -300,7 +297,7 @@ impl IotCoreClient {
 
                     let address = MacAddress::from_str(&msg.address).unwrap();
 
-                    let mut queue: Vec<RuuviBluetoothBeacon> = match message_queue.get(&address) {
+                    let mut queue: Vec<RuuviBluetoothBeacon> = match self.discovered_tags.get(&address) {
                         Some(queue) => queue.to_vec(),
                         None => Vec::new()
                     };
@@ -325,20 +322,14 @@ impl IotCoreClient {
                                     Err(error) => error!("Error on publishing message queue to MQTT: '{}'. Will retry.", error)
                                 };
                                 // empty the message queue
-                                message_queue.remove(&address);
+                                self.discovered_tags.insert(address, Vec::new());
                             } else {
                                 trace!("add beacon to queue");
                                 // add beacon to queue
                                 queue.push(msg);
                                 debug!("Message queue size for '{}': {}/{}", address, queue.len(), self.collectconfig.as_ref().unwrap().collection_size());
                                 // replace in hashmap the message queue with new extended one
-                                message_queue.insert(address, queue.to_vec());
-                            }
-                        } else {
-                            trace!("this tag is not bound to gateway");
-                            if queue.len() > 0 {
-                                trace!("invalidate previously bound tag's queue");
-                                message_queue.remove(&address);
+                                self.discovered_tags.insert(address, queue.to_vec());
                             }
                         }
                     } else {
@@ -369,13 +360,13 @@ impl IotCoreClient {
 
     fn try_attach_device(&mut self, address: &MacAddress) -> bool {
         trace!("in try_attach_device");
-        if self.client.is_connected() && !self.discovered_tags.contains(address) {
+        if self.client.is_connected() && self.discovered_tags.get(address).is_none() {
             // try to attach a newly discovered beacon owner to this gateway
             //  (succesful only if bound)
             match self.publish_message(self.device_attach_topic(&address), "{}".to_string()) {
                 Ok(_) => {
                     info!("Discovered Ruuvi tag ({}) attached to gateway succesfully.", address.to_string(MacAddressFormat::Canonical).to_uppercase());
-                    self.discovered_tags.push(*address);
+                    self.discovered_tags.insert(*address, Vec::new());
                 },
                 Err(error) => {
                     warn!("Discovered Ruuvi tag ({}) attachment to gateway failed (possibly not bound): {}", 
@@ -385,18 +376,19 @@ impl IotCoreClient {
                 }
             };
         }
+
         true
     }
 
     fn reattach_discovered_devices(&mut self) {
         trace!("in reattach_discovered_devices");
         if self.client.is_connected() {
-            for tag in self.discovered_tags.clone().iter() {
+            for (tag, _) in self.discovered_tags.clone().iter() {
                 match self.publish_message(self.device_attach_topic(&tag), "{}".to_string()) {
                     Ok(_) => info!("Discovered Ruuvi tag ({}) reattached to gateway succesfully.", tag.to_string(MacAddressFormat::Canonical).to_uppercase()),
                     Err(error) => {
                         // remove the tag from associated list as it failed this time around
-                        self.discovered_tags.retain(|x| *x != *tag);
+                        self.discovered_tags.remove(tag);
                         warn!("Discovered Ruuvi tag ({}) reattached to gateway failed: {}", 
                             tag.to_string(MacAddressFormat::Canonical).to_uppercase(),
                             error);
@@ -409,7 +401,7 @@ impl IotCoreClient {
     fn detach_devices(&mut self) {
         trace!("in detach_devices");
         if self.client.is_connected() {
-            for tag in self.discovered_tags.clone().iter() {
+            for (tag, _) in self.discovered_tags.clone().iter() {
                 match self.publish_message(self.device_detach_topic(&tag), "{}".to_string()) {
                     Ok(_) => info!("Discovered Ruuvi tag ({}) detached from gateway succesfully.", tag.to_string(MacAddressFormat::Canonical).to_uppercase()),
                     Err(error) => warn!("Discovered Ruuvi tag ({}) detachment from gateway failed: {}", 
@@ -524,7 +516,7 @@ impl IotCoreClient {
             collectconfig: None,
             last_pause: None,
             last_seen: Instant::now(),
-            discovered_tags: Vec::new()
+            discovered_tags: HashMap::new(),
         })
     }
 }
