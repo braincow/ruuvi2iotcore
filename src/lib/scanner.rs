@@ -254,9 +254,6 @@ impl BluetoothScanner {
             if self.bt_receiver.is_some() && self.bt_central.is_some() {
                 match  self.bt_receiver.as_ref().unwrap().try_recv() {
                     Ok(event) => {
-                        // update the last_seen counter to verify internally that we are doing work
-                        last_seen = time::Instant::now();
-
                         let bd_addr = match event {
                             CentralEvent::DeviceDiscovered(bd_addr) => Some(bd_addr),
                             CentralEvent::DeviceUpdated(bd_addr) => Some(bd_addr),
@@ -269,6 +266,9 @@ impl BluetoothScanner {
         
                         if let Some(data) = properties.manufacturer_data {
                             if data[0] == 153 && data[1] == 4 {
+                                // update the last_seen counter to verify internally that we are doing work
+                                last_seen = time::Instant::now();
+
                                 // these values in DEC instead of HEX to identify ruuvi tags with dataformat 5
                                 // ^--- fields in index 0 and 1 indicate 99 4 as the manufacturer (ruuvi) and index 3 points data version
                                 let packet = match data[2] {
