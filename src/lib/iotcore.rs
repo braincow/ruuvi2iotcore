@@ -289,7 +289,7 @@ impl IotCoreClient {
 
                     let mut queue: Vec<RuuviBluetoothBeacon> = match message_queue.get(&address) {
                         Some(queue) => queue.to_vec(),
-                        None => vec![]
+                        None => Vec::new()
                     };
 
                     // submit the beacon to iotcore if collecting them is enabled
