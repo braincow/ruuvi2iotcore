@@ -100,6 +100,7 @@ fn main() -> Result<(), Report> {
         // spawn the mqtt thread
         scope.spawn(move|_| {
             loop {
+                trace!("in MQTT thread loop");
                 match iotcore.start_client() {
                     Ok(exit) => if exit {
                         break;
@@ -115,6 +116,7 @@ fn main() -> Result<(), Report> {
         // spawn bt scan thread
         scope.spawn(move|_| {
             loop {
+                trace!("in BT thread loop");
                 match scanner.start_scanner() {
                     Ok(exit) => if exit {
                         break;
@@ -128,7 +130,7 @@ fn main() -> Result<(), Report> {
         });
     }).unwrap();
 
-    info!("Shutting down {}", env!("CARGO_PKG_NAME"));
+    warn!("Shutting down {}", env!("CARGO_PKG_NAME"));
     // return with Ok (success)
     Ok(())
 }

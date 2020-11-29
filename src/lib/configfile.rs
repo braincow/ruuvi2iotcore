@@ -12,6 +12,7 @@ pub struct IdentityConfig {
 
 impl IdentityConfig {
     pub fn token_lifetime(&self) -> u64 {
+        trace!("in token_lifetime");
         if self.token_lifetime.is_none() {
             return 3600
         }
@@ -30,11 +31,13 @@ pub struct IotCoreConfig {
 
 impl IotCoreConfig {
     pub fn client_id(&self) -> String {
+        trace!("in client_id");
         let client_id = format!("projects/{}/locations/{}/registries/{}/devices/{}",
             self.project_id,
             self.region,
             self.registry,
             self.device_id);
+        debug!("client_id is '{}'", client_id);
         client_id
     }
 }
@@ -47,6 +50,7 @@ pub struct AppConfig {
 
 impl AppConfig {
     pub fn read_config(config_file_path: &Path) -> Result<AppConfig, Report> {
+        trace!("in read_config");
         let config_yaml = match fs::read_to_string(config_file_path) {
             Ok(yaml) => yaml,
             Err(error) => return Err(
@@ -63,6 +67,7 @@ impl AppConfig {
                     .with_section(move || error.to_string().header("Reason:")) 
                 )
         };
+        debug!("application configuration is: {:?}", config);
     
         Ok(config)
     }

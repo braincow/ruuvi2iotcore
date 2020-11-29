@@ -29,7 +29,7 @@ pub struct BluetoothScanner {
 
 impl BluetoothScanner {
     fn reserve_adapter(&mut self) -> Result<(), Report> {
-        info!("Reserving Bluetooth adapter");
+        debug!("Reserving Bluetooth adapter");
 
         let manager = match Manager::new() {
             Ok(manager) => manager,
@@ -99,8 +99,9 @@ impl BluetoothScanner {
     }
 
     fn release_adapter(&mut self) -> Result<(), Report> {
+        trace!("in release_adapter");
         if self.bt_central.is_some() {
-            warn!("Releasing Bluetooth adapter.");
+            debug!("Releasing Bluetooth adapter.");
             match self.bt_central.as_ref().unwrap().stop_scan() {
                 Ok(_) => {
                     self.bt_central = None;
@@ -117,6 +118,7 @@ impl BluetoothScanner {
     }
 
     fn start_scan(&self) -> Result<(), Report> {
+        trace!("in start_scan");
         match self.bt_central {
             None => return Err(eyre!("No Bluetooth adapter reserved for use")),
             Some(_) => {
@@ -136,11 +138,12 @@ impl BluetoothScanner {
     }
 
     fn stop_scan(&self) -> Result<(), Report> {
+        trace!("in stop_scan");
         match self.bt_central {
             None => return Err(eyre!("No Bluetooth adapter reserved for use")),
             Some(_) => {
                 match self.bt_central.as_ref().unwrap().stop_scan() {
-                    Ok(_) => warn!("Stopped passive Bluetooth scan on configured adapter"),
+                    Ok(_) => info!("Stopped passive Bluetooth scan on configured adapter"),
                     Err(error) => return Err(
                         eyre!("Unable to stop Bluetooth scan on adapter")
                         .with_section(move || self.adapter_index.unwrap().to_string().header("Configured adapter index:"))
@@ -153,7 +156,7 @@ impl BluetoothScanner {
     }
 
     pub fn start_scanner(&mut self) -> Result<bool, Report> {
-        trace!("Entering to start_scanner()");
+        trace!("in start_scanner");
         if self.adapter_index.is_some() {
             trace!("Entering to start_scanner() from unclean restart.");
             // i am restarting from main loop as I got here and I have some adapter index
@@ -173,7 +176,7 @@ impl BluetoothScanner {
                     error!("{}", error);
                     match self.release_adapter() {
                         Ok(_) => {},
-                        Err(error) => error!("Compound error while trying to recover from unclean restart: {}", error)
+                        Err(error) => error!("Compound error while trying to recover from unclean thread restart: {}", error)
                     }
                     self.bt_central = None;
                     self.bt_receiver = None;
@@ -297,8 +300,6 @@ impl BluetoothScanner {
                                     self.channel_sender.send(packet).unwrap();
                                 }
                             }
-                        } else {
-                            trace!("No manufacturer data received in: {:?}", properties);
                         }    
                     },
                     Err(_) => {}
@@ -315,6 +316,7 @@ impl BluetoothScanner {
     }
 
     pub fn build(s: &channel::Sender<RuuviBluetoothBeacon>, cnc_r: &channel::Receiver<IOTCoreCNCMessageKind>) -> Result<BluetoothScanner, Report> {
+        trace!("in build");
         Ok(BluetoothScanner {
             adapter_index: None,
             bt_central: None,
