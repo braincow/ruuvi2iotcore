@@ -109,7 +109,6 @@ impl IotCoreClient {
     fn disconnect(&mut self) -> Result<(), Report> {
         if self.client.is_connected() {
             warn!("Disconnecting from MQTT broker");
-            self.detach_devices();
         }
         match self.client.disconnect(None) {
             Ok(_) => Ok(()),
@@ -259,6 +258,7 @@ impl IotCoreClient {
                                     },
                                     CNCCommand::SHUTDOWN => {
                                         warn!("CNC command received: SHUTDOWN software");
+                                        self.detach_devices();
                                         break;
                                     },
                                     CNCCommand::RESET => {
