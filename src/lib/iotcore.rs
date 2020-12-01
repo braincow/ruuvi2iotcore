@@ -350,7 +350,7 @@ impl IotCoreClient {
             };
 
             // sleep for a while to reduce amount of CPU burn and idle for a while
-            thread::sleep(time::Duration::from_millis(10));
+            thread::sleep(time::Duration::from_millis(100));
         }
         
         self.disconnect()?;
