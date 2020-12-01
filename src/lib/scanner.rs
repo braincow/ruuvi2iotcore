@@ -7,11 +7,12 @@ use structview::View;
 use chrono;
 use serde::Serialize;
 use std::{time, thread};
+use std::clone::Clone;
 
 use crate::lib::ruuvi::RuuviTagDataFormat5;
 use crate::lib::iotcore::{IOTCoreCNCMessageKind, CNCCommand};
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct RuuviBluetoothBeacon {
     pub data: RuuviTagDataFormat5,
     pub timestamp: chrono::DateTime<chrono::Utc>,
@@ -28,7 +29,7 @@ pub struct BluetoothScanner {
 
 impl BluetoothScanner {
     fn reserve_adapter(&mut self) -> Result<(), Report> {
-        info!("Reserving Bluetooth adapter");
+        debug!("Reserving Bluetooth adapter");
 
         let manager = match Manager::new() {
             Ok(manager) => manager,
@@ -98,8 +99,9 @@ impl BluetoothScanner {
     }
 
     fn release_adapter(&mut self) -> Result<(), Report> {
+        trace!("in release_adapter");
         if self.bt_central.is_some() {
-            warn!("Releasing Bluetooth adapter.");
+            debug!("Releasing Bluetooth adapter.");
             match self.bt_central.as_ref().unwrap().stop_scan() {
                 Ok(_) => {
                     self.bt_central = None;
@@ -116,6 +118,7 @@ impl BluetoothScanner {
     }
 
     fn start_scan(&self) -> Result<(), Report> {
+        trace!("in start_scan");
         match self.bt_central {
             None => return Err(eyre!("No Bluetooth adapter reserved for use")),
             Some(_) => {
@@ -135,11 +138,12 @@ impl BluetoothScanner {
     }
 
     fn stop_scan(&self) -> Result<(), Report> {
+        trace!("in stop_scan");
         match self.bt_central {
             None => return Err(eyre!("No Bluetooth adapter reserved for use")),
             Some(_) => {
                 match self.bt_central.as_ref().unwrap().stop_scan() {
-                    Ok(_) => warn!("Stopped passive Bluetooth scan on configured adapter"),
+                    Ok(_) => info!("Stopped passive Bluetooth scan on configured adapter"),
                     Err(error) => return Err(
                         eyre!("Unable to stop Bluetooth scan on adapter")
                         .with_section(move || self.adapter_index.unwrap().to_string().header("Configured adapter index:"))
@@ -152,7 +156,7 @@ impl BluetoothScanner {
     }
 
     pub fn start_scanner(&mut self) -> Result<bool, Report> {
-        trace!("Entering to start_scanner()");
+        trace!("in start_scanner");
         if self.adapter_index.is_some() {
             trace!("Entering to start_scanner() from unclean restart.");
             // i am restarting from main loop as I got here and I have some adapter index
@@ -172,7 +176,7 @@ impl BluetoothScanner {
                     error!("{}", error);
                     match self.release_adapter() {
                         Ok(_) => {},
-                        Err(error) => error!("Compound error while trying to recover from unclean restart: {}", error)
+                        Err(error) => error!("Compound error while trying to recover from unclean thread restart: {}", error)
                     }
                     self.bt_central = None;
                     self.bt_receiver = None;
@@ -217,16 +221,20 @@ impl BluetoothScanner {
                     },
                     IOTCoreCNCMessageKind::CONFIG(collectconfig) => match collectconfig {
                         Some(collectconfig) => {
+                            let new_adapter_index = match collectconfig.bluetooth {
+                                Some(bluetooth) => bluetooth.adapter_index,
+                                None => 0
+                            };
                             if self.adapter_index.is_none() {
                                 trace!("Associate Bluetooth adapter for the first time");
                                 // associate the adapter
-                                self.adapter_index = Some(collectconfig.bluetooth.adapter_index);
+                                self.adapter_index = Some(new_adapter_index);
                                 self.reserve_adapter()?;
-                            } else if self.adapter_index != Some(collectconfig.bluetooth.adapter_index) {
+                            } else if self.adapter_index != Some(new_adapter_index) {
                                 //  store the adapter_index and exit with boolean value that causes main loop
                                 //  to restart us cleanly
                                 self.stop_scan()?;
-                                self.adapter_index = Some(collectconfig.bluetooth.adapter_index);
+                                self.adapter_index = Some(new_adapter_index);
                                 trace!("Restarting through main loop to finalize change of associated Bluetooth adapter");
                                 return Ok(false)
                             } else {
@@ -246,9 +254,6 @@ impl BluetoothScanner {
             if self.bt_receiver.is_some() && self.bt_central.is_some() {
                 match  self.bt_receiver.as_ref().unwrap().try_recv() {
                     Ok(event) => {
-                        // update the last_seen counter to verify internally that we are doing work
-                        last_seen = time::Instant::now();
-
                         let bd_addr = match event {
                             CentralEvent::DeviceDiscovered(bd_addr) => Some(bd_addr),
                             CentralEvent::DeviceUpdated(bd_addr) => Some(bd_addr),
@@ -261,6 +266,9 @@ impl BluetoothScanner {
         
                         if let Some(data) = properties.manufacturer_data {
                             if data[0] == 153 && data[1] == 4 {
+                                // update the last_seen counter to verify internally that we are doing work
+                                last_seen = time::Instant::now();
+
                                 // these values in DEC instead of HEX to identify ruuvi tags with dataformat 5
                                 // ^--- fields in index 0 and 1 indicate 99 4 as the manufacturer (ruuvi) and index 3 points data version
                                 let packet = match data[2] {
@@ -292,8 +300,6 @@ impl BluetoothScanner {
                                     self.channel_sender.send(packet).unwrap();
                                 }
                             }
-                        } else {
-                            trace!("No manufacturer data received in: {:?}", properties);
                         }    
                     },
                     Err(_) => {}
@@ -310,6 +316,7 @@ impl BluetoothScanner {
     }
 
     pub fn build(s: &channel::Sender<RuuviBluetoothBeacon>, cnc_r: &channel::Receiver<IOTCoreCNCMessageKind>) -> Result<BluetoothScanner, Report> {
+        trace!("in build");
         Ok(BluetoothScanner {
             adapter_index: None,
             bt_central: None,

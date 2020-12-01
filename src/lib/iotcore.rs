@@ -1,11 +1,14 @@
 use serde::{Serialize, Deserialize};
-use std::time::{Instant, Duration};
 use color_eyre::{eyre::eyre, SectionExt, Section, eyre::Report};
 use crossbeam::channel;
 use paho_mqtt as mqtt;
+use eui48::{MacAddress, MacAddressFormat};
+use std::time::{Instant, Duration};
 use std::{time, thread};
 use std::sync::mpsc::Receiver;
 use std::clone::Clone;
+use std::str::FromStr;
+use std::collections::HashMap;
 
 use crate::lib::configfile::AppConfig;
 use crate::lib::scanner::RuuviBluetoothBeacon;
@@ -35,26 +38,16 @@ pub struct CNCCommandMessage {
 }
 
 #[derive(Debug,Deserialize,Serialize,Clone,PartialEq,PartialOrd)]
-enum CollectMode {
-    #[serde(rename = "blacklist")]
-    BLACKLIST,
-    #[serde(rename = "whitelist")]
-    WHITELIST
-}
-
-#[derive(Debug,Deserialize,Serialize,Clone,PartialEq,PartialOrd)]
 pub struct BluetoothConfig {
     pub adapter_index: usize
 }
 
 #[derive(Debug,Deserialize,Serialize,Clone,PartialEq,PartialOrd)]
 pub struct CollectConfig {
-    mode: CollectMode,
-    addresses: Vec<String>,
     collecting: bool,
     event_subfolder: Option<String>,
     collection_size: Option<usize>,
-    pub bluetooth: BluetoothConfig
+    pub bluetooth: Option<BluetoothConfig>
 }
 impl CollectConfig {
     pub fn collection_size(&self) -> usize {
@@ -66,14 +59,12 @@ impl CollectConfig {
 }
 
 pub struct IotCoreClient {
-    device_id: String,
     ssl_opts: mqtt::SslOptions,
     conn_opts: mqtt::ConnectOptions,
     client: mqtt::Client,
     channel_receiver: channel::Receiver<RuuviBluetoothBeacon>,
     cnc_sender: channel::Sender<IOTCoreCNCMessageKind>,
     jwt_factory: IotCoreAuthToken,
-    events_topic: Option<String>,
     config_topic: String,
     state_topic: String,
     command_topic_root: String,
@@ -81,10 +72,16 @@ pub struct IotCoreClient {
     collectconfig: Option<CollectConfig>,
     last_pause: Option<Instant>,
     last_seen: Instant,
+    discovered_tags: HashMap<MacAddress, Vec<RuuviBluetoothBeacon>>,
 }
 
 impl IotCoreClient {
-    fn publish_message(&mut self, topic: String, msg: Vec<u8>) -> Result<(), Report> {
+    fn publish_message(&mut self, topic: String, message: String) -> Result<(), Report> {
+        trace!("in publish_message");
+        debug!("outbound mqtt topic: {}", topic);
+        trace!("outbound mqtt message: {}", message);
+
+        let msg = message.as_bytes().to_vec();
         // fullfill IoT Core's odd JWT based authentication needs by disconnecting & connecting with new one
         //   when needed
         if !self.jwt_factory.is_valid(60) || !self.client.is_connected() {
@@ -105,19 +102,20 @@ impl IotCoreClient {
             .qos(mqtt::QOS_1)
             .finalize();
 
-            match self.client.publish(mqtt_msg) {
-                Ok(_) => {},
+            Ok(match self.client.publish(mqtt_msg) {
+                Ok(retval) => retval,
                 Err(error) => return Err(
                     eyre!("Error while publishing to MQTT")
                         .with_section(move || error.to_string().header("Reason:"))
                     )
-            };
-
-            Ok(())
+            })
     }
 
-    fn disconnect(&self) -> Result<(), Report> {
-        warn!("Disconnecting from MQTT broker");
+    fn disconnect(&mut self) -> Result<(), Report> {
+        trace!("in disconnect");
+        if self.client.is_connected() {
+            warn!("Disconnecting from MQTT broker");
+        }
         match self.client.disconnect(None) {
             Ok(_) => Ok(()),
             Err(error) => {
@@ -133,7 +131,8 @@ impl IotCoreClient {
         }
     }
 
-    fn connect(&self) -> Result<(), Report> {
+    fn connect(&mut self) -> Result<(), Report> {
+        trace!("in connect");
         // connect to the mqtt broker
         match self.client.connect(self.conn_opts.clone()) {
             Ok(_) => info!("Connected to IoT core service"),
@@ -153,15 +152,20 @@ impl IotCoreClient {
                 )
         }
 
+        self.reattach_discovered_devices();
+
         Ok(())
     }
 
     fn set_collecting_state(&mut self, enabled: bool) -> Result<(), Report> {
+        trace!("in set_collecting_state");
+        debug!("set_collecting_state({})", enabled);
         if let Some(collectconfig) = &self.collectconfig {
             let mut newconfig = collectconfig.clone();
             newconfig.collecting = enabled;
             self.collectconfig = Some(newconfig);
-            self.publish_message(self.state_topic.clone(), json!(&self.collectconfig).to_string().as_bytes().to_vec())?;
+            debug!("collectconfig is now: {:?}", self.collectconfig);
+            self.publish_message(self.state_topic.clone(), serde_json::to_string_pretty(&self.collectconfig).unwrap())?;
         } else {
             error!("No collect config defined. Unable to change collect state to: {}", enabled);
         }
@@ -170,6 +174,7 @@ impl IotCoreClient {
     }
 
     fn enable_collecting(&mut self) -> Result<(), Report> {
+        trace!("in enable_collecting");
         let retval = self.set_collecting_state(true);
         if retval.is_ok() {
             self.last_pause = None;
@@ -178,6 +183,7 @@ impl IotCoreClient {
     }
 
     fn disable_collecting(&mut self) -> Result<(), Report> {
+        trace!("in disable_collecting");
         let retval = self.set_collecting_state(false);
         if retval.is_ok() {
             self.last_pause = Some(Instant::now());
@@ -186,7 +192,7 @@ impl IotCoreClient {
     }
 
     pub fn start_client(&mut self) -> Result<bool, Report> {
-
+        trace!("in start_client");
         // cycle connection state
         if self.client.is_connected() {
             trace!("Entering to start_client() from unclean restart.");
@@ -194,10 +200,7 @@ impl IotCoreClient {
         }
         self.connect()?;
         
-        let mut message_queue: Vec<RuuviBluetoothBeacon> = Vec::new();
-
         self.last_seen = Instant::now();
-
         // loop messages and wait for a ready signal
         loop {
             // check that we are actually doing work, and if not then issue a restart
@@ -215,7 +218,7 @@ impl IotCoreClient {
             match self.consumer.try_recv() {
                 Ok(optmsg) => {
                     if let Some(msg) = optmsg {
-                        trace!("{:?}", msg);
+                        trace!("incoming CNC message: '{:?}'", msg);
 
                         if msg.topic() == self.config_topic {
                             // we received new config, decode it
@@ -228,11 +231,7 @@ impl IotCoreClient {
                             };
                             if new_collectconfig != self.collectconfig && new_collectconfig.is_some() {
                                 self.collectconfig = new_collectconfig;
-                                let events_topic = match &self.collectconfig.as_ref().unwrap().event_subfolder {
-                                    Some(subfolder) => format!("/devices/{}/events/{}", self.device_id, subfolder),
-                                    None => format!("/devices/{}/events", self.device_id)
-                                };
-                                self.events_topic = Some(events_topic);
+                                debug!("New collect config activated is '{:?}'", self.collectconfig);
                                 if !&self.collectconfig.as_ref().unwrap().collecting {
                                     self.disable_collecting()?;
                                 } else {
@@ -240,7 +239,6 @@ impl IotCoreClient {
                                 }
                                 // send config to CNC channel
                                 self.cnc_sender.send(IOTCoreCNCMessageKind::CONFIG(self.collectconfig.clone())).unwrap(); // TODO: fix unwrap    
-                                debug!("New collect config activated is '{:?}'", self.collectconfig);
                             } else {
                                 debug!("Not replacing active collect config with identical one.");
                             }
@@ -269,6 +267,7 @@ impl IotCoreClient {
                                     },
                                     CNCCommand::SHUTDOWN => {
                                         warn!("CNC command received: SHUTDOWN software");
+                                        self.detach_devices();
                                         break;
                                     },
                                     CNCCommand::RESET => {
@@ -282,7 +281,7 @@ impl IotCoreClient {
                                 };
                             }
                         } else {
-                            warn!("Unimplemented CNC topic in received message.");
+                            debug!("Unimplemented CNC topic in received message.");
                         }
                     }
                 },
@@ -292,51 +291,49 @@ impl IotCoreClient {
             // check into the channel to see if there are beacons to relay to the mqtt broker
             match self.channel_receiver.try_recv() {
                 Ok(msg) => {
+                    debug!("new incoming ruuvi tag beacon from bt thread: {:?}", msg);
                     // update the last_seen counter to verify internally that we are doing work
                     self.last_seen = Instant::now();
-                    // check against collectconfig if this beacon shall be submitted
-                    let publish = match &self.collectconfig {
-                        Some(collectconfig) => {
-                            match collectconfig.mode {
-                                CollectMode::BLACKLIST => {
-                                    if collectconfig.addresses.contains(&msg.address) {
-                                        false
-                                    } else {
-                                        true
-                                    }
-                                },
-                                CollectMode::WHITELIST => {
-                                    if collectconfig.addresses.contains(&msg.address) {
-                                        true
-                                    } else {
-                                        false
-                                    }
-                                }
-                            }
-                        },
-                        None => true
+
+                    let address = MacAddress::from_str(&msg.address).unwrap();
+
+                    let mut queue: Vec<RuuviBluetoothBeacon> = match self.discovered_tags.get(&address) {
+                        Some(queue) => queue.to_vec(),
+                        None => Vec::new()
                     };
-                    let mut collect = false;
-                    if let Some(collectconfig) = &self.collectconfig {
-                        collect = collectconfig.collecting;
-                    }
-                    // submit the beacon to iotcore
-                    if publish && collect {
-                        if &self.collectconfig.as_ref().unwrap().collection_size() <= &1 {
-                            match self.publish_message(self.events_topic.as_ref().unwrap().to_string(), json!(msg).to_string().as_bytes().to_vec()) {
-                                Ok(_) => trace!("iotcore publish message: {:?}", message_queue),
-                                Err(error) => error!("Error on publishing message to MQTT: '{}'. Will retry.", error)
-                            };
-                        } else if message_queue.len() >= self.collectconfig.as_ref().unwrap().collection_size() {
-                            match self.publish_message(self.events_topic.as_ref().unwrap().to_string(), json!(message_queue).to_string().as_bytes().to_vec()) {
-                                Ok(_) => trace!("iotcore publish message queue: {:?}", message_queue),
-                                Err(error) => error!("Error on publishing message queue to MQTT: '{}'. Will retry.", error)
-                            };
-                            message_queue = Vec::new();
-                        } else {
-                            message_queue.push(msg);
+
+                    // submit the beacon to iotcore if collecting them is enabled
+                    if self.collectconfig.as_ref().unwrap().collecting {
+                        if self.try_attach_device(&address) {
+                            let topic = self.device_event_topic(&address).unwrap();
+
+                            if &self.collectconfig.as_ref().unwrap().collection_size() <= &1 {
+                                trace!("publish individual beacon");
+                                match self.publish_message(topic, serde_json::to_string_pretty(&msg).unwrap()) {
+                                    Ok(_) => {},
+                                    Err(error) => error!("Error on publishing message to MQTT: '{}'. Will retry.", error)
+                                };
+                            } else if queue.len() >= self.collectconfig.as_ref().unwrap().collection_size() - 1 {
+                                trace!("publish beacon queue");
+                                queue.push(msg);
+                                debug!("Message queue size for '{}': {}/{}", address, queue.len(), self.collectconfig.as_ref().unwrap().collection_size());
+                                match self.publish_message(topic, serde_json::to_string_pretty(&queue).unwrap()) {
+                                    Ok(_) => {},
+                                    Err(error) => error!("Error on publishing message queue to MQTT: '{}'. Will retry.", error)
+                                };
+                                // empty the message queue
+                                self.discovered_tags.insert(address, Vec::new());
+                            } else {
+                                trace!("add beacon to queue");
+                                // add beacon to queue
+                                queue.push(msg);
+                                debug!("Message queue size for '{}': {}/{}", address, queue.len(), self.collectconfig.as_ref().unwrap().collection_size());
+                                // replace in hashmap the message queue with new extended one
+                                self.discovered_tags.insert(address, queue.to_vec());
+                            }
                         }
-                    } else if !collect {
+                    } else {
+                        trace!("beacon collection is paused");
                         if let Some(last_pause) = self.last_pause {
                             if last_pause.elapsed() >= Duration::from_secs(4*60) {
                                 // we are paused, so to avoid timeout due to lack of published messages to broker we occasionally will need to
@@ -348,7 +345,6 @@ impl IotCoreClient {
                             error!("Beacon collection is paused, but paused state was not established correctly.")
                         }
                     }
-                    trace!("Message queue size: {}/{}", message_queue.len(), self.collectconfig.as_ref().unwrap().collection_size());
                 },
                 Err(_) => {}
             };
@@ -362,8 +358,86 @@ impl IotCoreClient {
         Ok(true)
     }
 
-    pub fn build(appconfig: &AppConfig, r: &channel::Receiver<RuuviBluetoothBeacon>, cnc_s: &channel::Sender<IOTCoreCNCMessageKind>) -> Result<IotCoreClient, Report> {
+    fn try_attach_device(&mut self, address: &MacAddress) -> bool {
+        trace!("in try_attach_device");
+        if self.client.is_connected() && self.discovered_tags.get(address).is_none() {
+            // try to attach a newly discovered beacon owner to this gateway
+            //  (succesful only if bound)
+            match self.publish_message(self.device_attach_topic(&address), "{}".to_string()) {
+                Ok(_) => {
+                    info!("Discovered Ruuvi tag ({}) attached to gateway succesfully.", address.to_string(MacAddressFormat::Canonical).to_uppercase());
+                    self.discovered_tags.insert(*address, Vec::new());
+                },
+                Err(error) => {
+                    warn!("Discovered Ruuvi tag ({}) attachment to gateway failed (possibly not bound): {}", 
+                        address.to_string(MacAddressFormat::Canonical).to_uppercase(),
+                        error);
+                    return false;
+                }
+            };
+        }
 
+        true
+    }
+
+    fn reattach_discovered_devices(&mut self) {
+        trace!("in reattach_discovered_devices");
+        if self.client.is_connected() {
+            for (tag, _) in self.discovered_tags.clone().iter() {
+                match self.publish_message(self.device_attach_topic(&tag), "{}".to_string()) {
+                    Ok(_) => info!("Discovered Ruuvi tag ({}) reattached to gateway succesfully.", tag.to_string(MacAddressFormat::Canonical).to_uppercase()),
+                    Err(error) => {
+                        // remove the tag from associated list as it failed this time around
+                        self.discovered_tags.remove(tag);
+                        warn!("Discovered Ruuvi tag ({}) reattached to gateway failed: {}", 
+                            tag.to_string(MacAddressFormat::Canonical).to_uppercase(),
+                            error);
+                    }
+                }
+            }
+        }
+    }
+
+    fn detach_devices(&mut self) {
+        trace!("in detach_devices");
+        if self.client.is_connected() {
+            for (tag, _) in self.discovered_tags.clone().iter() {
+                match self.publish_message(self.device_detach_topic(&tag), "{}".to_string()) {
+                    Ok(_) => info!("Discovered Ruuvi tag ({}) detached from gateway succesfully.", tag.to_string(MacAddressFormat::Canonical).to_uppercase()),
+                    Err(error) => warn!("Discovered Ruuvi tag ({}) detachment from gateway failed: {}", 
+                        tag.to_string(MacAddressFormat::Canonical).to_uppercase(),
+                        error)
+                }
+            }
+        }
+    }
+
+    fn device_event_topic(&self, address: &MacAddress) -> Option<String> {
+        trace!("in device_event_topic");
+        let mut retval: Option<String> = None;
+        if let Some(collectconfig) = &self.collectconfig {
+            retval = match &collectconfig.event_subfolder {
+                Some(folder) => Some(format!("/devices/{}/events/{}", address.to_string(MacAddressFormat::Canonical).to_uppercase(), folder)),
+                None => Some(format!("/devices/{}/events", address.to_string(MacAddressFormat::Canonical).to_uppercase()))
+            }
+        }
+        retval
+    }
+
+    fn device_attach_topic(&self, address: &MacAddress) -> String {
+        let topic = format!("/devices/{}/attach", address.to_string(MacAddressFormat::Canonical).to_uppercase());
+        debug!("device attach topic: {}", topic);
+        topic
+    }
+
+    fn device_detach_topic(&self, address: &MacAddress) -> String {
+        let topic = format!("/devices/{}/detach", address.to_string(MacAddressFormat::Canonical).to_uppercase());
+        debug!("device detach topic: {}", topic);
+        topic
+    }
+
+    pub fn build(appconfig: &AppConfig, r: &channel::Receiver<RuuviBluetoothBeacon>, cnc_s: &channel::Sender<IOTCoreCNCMessageKind>) -> Result<IotCoreClient, Report> {
+        trace!("in build");
         let create_opts = mqtt::CreateOptionsBuilder::new()
             .client_id(appconfig.iotcore.client_id())
             .mqtt_version(mqtt::types::MQTT_VERSION_3_1_1)
@@ -382,13 +456,15 @@ impl IotCoreClient {
 
         let mut ssl_options_builder = mqtt::SslOptionsBuilder::new();
         ssl_options_builder.ssl_version(mqtt::SslVersion::Tls_1_2);
-        match ssl_options_builder.trust_store(&appconfig.identity.ca_certs) {
-            Ok(options_builder) => options_builder,
-            Err(error) => return Err(
-                eyre!("Unable to use CA certificates in mqtt client")
-                    .with_section(move || error.to_string().header("Reason:"))
-                )
-        };
+        if appconfig.identity.ca_certs.is_some() {
+            match ssl_options_builder.trust_store(appconfig.identity.ca_certs.as_ref().unwrap()) {
+                Ok(options_builder) => options_builder,
+                Err(error) => return Err(
+                    eyre!("Unable to use CA certificates in mqtt client")
+                        .with_section(move || error.to_string().header("Reason:"))
+                    )
+            };    
+        }
         match ssl_options_builder.key_store(&appconfig.identity.public_key) {
             Ok(options_builder) => options_builder,
             Err(error) => return Err(
@@ -427,14 +503,12 @@ impl IotCoreClient {
         let device_id = appconfig.iotcore.device_id.clone();
 
         Ok(IotCoreClient {
-            device_id: device_id.clone(),
             ssl_opts: ssl_options,
             conn_opts: conn_opts,
             client: cli,
             jwt_factory: jwt_factory,
             channel_receiver: r.clone(),
             cnc_sender: cnc_s.clone(),
-            events_topic: None,
             config_topic: format!("/devices/{}/config", device_id),
             state_topic: format!("/devices/{}/state", device_id),
             command_topic_root: format!("/devices/{}/commands", device_id),
@@ -442,6 +516,7 @@ impl IotCoreClient {
             collectconfig: None,
             last_pause: None,
             last_seen: Instant::now(),
+            discovered_tags: HashMap::new(),
         })
     }
 }

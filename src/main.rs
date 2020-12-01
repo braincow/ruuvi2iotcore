@@ -26,7 +26,7 @@ fn main() -> Result<(), Report> {
 
     // project dirs are located somewhere in the system based on arch and os
     let project_dirs = ProjectDirs::from("me", "bcow", env!("CARGO_PKG_NAME")).unwrap();
-    let default_config_file_path = Path::new(project_dirs.config_dir()).join(format!("{}.toml", env!("CARGO_PKG_NAME")));
+    let default_config_file_path = Path::new(project_dirs.config_dir()).join(format!("{}.yaml", env!("CARGO_PKG_NAME")));
     let default_logging_config_file_path = Path::new(project_dirs.config_dir()).join("log4rs.yaml");
     let default_working_dir_path = Path::new(project_dirs.data_dir());
 
@@ -100,6 +100,7 @@ fn main() -> Result<(), Report> {
         // spawn the mqtt thread
         scope.spawn(move|_| {
             loop {
+                trace!("in MQTT thread loop");
                 match iotcore.start_client() {
                     Ok(exit) => if exit {
                         break;
@@ -115,6 +116,7 @@ fn main() -> Result<(), Report> {
         // spawn bt scan thread
         scope.spawn(move|_| {
             loop {
+                trace!("in BT thread loop");
                 match scanner.start_scanner() {
                     Ok(exit) => if exit {
                         break;
@@ -128,7 +130,7 @@ fn main() -> Result<(), Report> {
         });
     }).unwrap();
 
-    info!("Shutting down {}", env!("CARGO_PKG_NAME"));
+    warn!("Shutting down {}", env!("CARGO_PKG_NAME"));
     // return with Ok (success)
     Ok(())
 }

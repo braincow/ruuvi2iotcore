@@ -1,6 +1,6 @@
 [package]
 name = "ruuvi2iotcore"
-version = "0.1.3"
+version = "0.2.0"
 authors = ["Antti Peltonen <antti.peltonen@iki.fi>"]
 edition = "2018"
 description = "Ruuvi tag beacons to GCP iot core"
@@ -21,9 +21,10 @@ log = "0.4.11"
 frank_jwt = "3.1.2"
 serde_json = "1.0.59"
 chrono = { version = "0.4.19", features = ["serde"] }
-#paho-mqtt = { git = "https://github.com/eclipse/paho.mqtt.rust", branch = "develop" }
 paho-mqtt = "0.8.0"
 log4rs = "0.13.0"
+eui48 = "1.1.0"
+serde_yaml = "0.8.14"
 
 [dev-dependencies]
 hex = "0.4.2"

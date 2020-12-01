@@ -19,6 +19,7 @@ pub struct JWTPayload {
 
 impl JWTPayload {
     fn new(audience: &String, lifetime: &u64) -> JWTPayload {
+        trace!("in new");
         let now = SystemTime::now();
         let secs_since_epoc = now.duration_since(UNIX_EPOCH).unwrap();
     
@@ -40,6 +41,7 @@ pub struct IotCoreAuthToken {
 
 impl IotCoreAuthToken {
     pub fn build(appconfig: &AppConfig) -> IotCoreAuthToken {
+        trace!("in build");
         IotCoreAuthToken {
             headers: JWTHeaders,
             payload: JWTPayload::new(&appconfig.iotcore.project_id, &appconfig.identity.token_lifetime()),
@@ -50,21 +52,26 @@ impl IotCoreAuthToken {
     }
 
     pub fn issue_new(&self) -> Result<String, Report> {
-        match encode(json!(self.headers), &self.private_key, &json!(self.payload), Algorithm::RS256) {
+        trace!("in issue_new");
+        let token = match encode(json!(self.headers), &self.private_key, &json!(self.payload), Algorithm::RS256) {
             Ok(jwt) => Ok(jwt),
             Err(error) => Err(
                 eyre!("Unable to issue new JWT token")
                     .with_section(move || error.to_string().header("Reason:"))
                 )
-        }
+        };
+        debug!("JWT token is: {:?}", token);
+        token
     }
 
     pub fn renew(&mut self) -> Result<String, Report> {
+        trace!("in renew");
         self.payload = JWTPayload::new(&self.audience, &self.lifetime);
         self.issue_new()
     }
 
     pub fn is_valid(&self, threshold: u64) -> bool {
+        trace!("in is_valid");
         let now = SystemTime::now();
         let secs_since_epoc = now.duration_since(UNIX_EPOCH).unwrap();
 
