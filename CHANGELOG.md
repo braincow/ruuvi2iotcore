@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-## [0.1.2] - 2020-06-20
+## [0.1.2] - 2020-11-28
 ### Added
 
 ### Changed
@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-## [0.1.1] - 2020-06-20
+## [0.1.1] - 2020-11-27
 ### Added
 
 ### Changed
@@ -35,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-## [0.1.0] - 2020-06-20
+## [0.1.0] - 2020-11-26
 ### Added
 - Ruuvi tag beacons are recorded & relayed to Google Cloud Platform IoT Core.
 
