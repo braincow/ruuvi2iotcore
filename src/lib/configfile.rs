@@ -2,6 +2,24 @@ use std::{fs, path::Path};
 use serde::{Serialize, Deserialize};
 use color_eyre::{eyre::eyre, SectionExt, Section, eyre::Report};
 
+fn read_pem(path: &Path) -> Result<Vec<u8>, Report> {
+    match fs::read_to_string(path) {
+        Ok(pem) => match base64::decode(pem) {
+            Ok(der_bytes) => return Ok(der_bytes),
+            Err(error) => return Err(
+                eyre!("Unable to decode certifiates file.")
+                    .with_section(move || path.to_string_lossy().trim().to_string().header("File name:"))
+                    .with_section(move || error.to_string().header("Reason:"))
+                )
+        },
+        Err(error) => return Err(
+            eyre!("Unable to read certifiates file")
+                .with_section(move || path.to_string_lossy().trim().to_string().header("File name:"))
+                .with_section(move || error.to_string().header("Reason:"))
+            )
+    }
+}
+
 #[derive(Debug,Deserialize,Serialize)]
 pub struct IdentityConfig {
     pub public_key: String,
@@ -18,6 +36,22 @@ impl IdentityConfig {
         }
 
         self.token_lifetime.unwrap()
+    }
+
+    pub fn ca_as_vec(&self) -> Result<Option<Vec<u8>>, Report> {
+        if let Some(ca_certs) = self.ca_certs.clone() {
+            Ok(Some(read_pem(Path::new(&ca_certs))?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn cert_as_vec(&self) -> Result<Vec<u8>, Report> {
+        Ok(read_pem(Path::new(&self.public_key))?)
+    }
+
+    pub fn key_as_vec(&self) -> Result<Vec<u8>, Report> {
+        Ok(read_pem(Path::new(&self.private_key))?)
     }
 }
 

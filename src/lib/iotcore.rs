@@ -1,11 +1,10 @@
 use serde::{Serialize, Deserialize};
 use color_eyre::{eyre::eyre, SectionExt, Section, eyre::Report};
 use crossbeam::channel;
-use paho_mqtt as mqtt;
+use rumqttc;
 use eui48::{MacAddress, MacAddressFormat};
 use std::time::{Instant, Duration};
 use std::{time, thread};
-use std::sync::mpsc::Receiver;
 use std::clone::Clone;
 use std::str::FromStr;
 use std::collections::HashMap;
@@ -59,16 +58,15 @@ impl CollectConfig {
 }
 
 pub struct IotCoreClient {
-    ssl_opts: mqtt::SslOptions,
-    conn_opts: mqtt::ConnectOptions,
-    client: mqtt::Client,
+    mqttoptions: rumqttc::MqttOptions,
+    client: Option<rumqttc::Client>,
+    connection: Option<rumqttc::Connection>,
     channel_receiver: channel::Receiver<RuuviBluetoothBeacon>,
     cnc_sender: channel::Sender<IOTCoreCNCMessageKind>,
     jwt_factory: IotCoreAuthToken,
     config_topic: String,
     state_topic: String,
     command_topic_root: String,
-    consumer: Receiver<Option<mqtt::message::Message>>,
     collectconfig: Option<CollectConfig>,
     last_pause: Option<Instant>,
     last_seen: Instant,
@@ -84,73 +82,75 @@ impl IotCoreClient {
         let msg = message.as_bytes().to_vec();
         // fullfill IoT Core's odd JWT based authentication needs by disconnecting & connecting with new one
         //   when needed
-        if !self.jwt_factory.is_valid(60) || !self.client.is_connected() {
+        if !self.jwt_factory.is_valid(60) || self.connection.is_none() {
             warn!("JWT token has/is about to expire or we have no connection. Initiating reconnect.");
             self.disconnect()?;
-            self.conn_opts = mqtt::ConnectOptionsBuilder::new()
-                .user_name("not_used")
-                .password(&self.jwt_factory.renew()?)
-                .ssl_options(self.ssl_opts.clone())
-                .finalize();
+
+            let jwt_token = match self.jwt_factory.issue_new() {
+                Ok(token) => token,
+                Err(error) => return Err(
+                    eyre!("Unable to renew JWT token")
+                        .with_section(move || error.to_string().header("Reason:"))
+                    )
+            };
+
+            let (username, _) = self.mqttoptions.credentials().unwrap();
+            self.mqttoptions.set_credentials(username, jwt_token);
+
             self.connect()?;
         }
 
         // create message and send it
-        let mqtt_msg = mqtt::MessageBuilder::new()
-            .topic(topic)
-            .payload(msg)
-            .qos(mqtt::QOS_1)
-            .finalize();
-
-            Ok(match self.client.publish(mqtt_msg) {
-                Ok(retval) => retval,
-                Err(error) => return Err(
-                    eyre!("Error while publishing to MQTT")
-                        .with_section(move || error.to_string().header("Reason:"))
-                    )
-            })
-    }
+        Ok(match self.client.as_mut().unwrap().publish(topic, rumqttc::QoS::AtMostOnce, true, msg) {
+            Ok(retval) => retval,
+            Err(error) => return Err(
+                eyre!("Error while publishing to MQTT")
+                    .with_section(move || error.to_string().header("Reason:"))
+                )
+        })
+}
 
     fn disconnect(&mut self) -> Result<(), Report> {
         trace!("in disconnect");
-        if self.client.is_connected() {
-            warn!("Disconnecting from MQTT broker");
-        }
-        match self.client.disconnect(None) {
-            Ok(_) => Ok(()),
-            Err(error) => {
-                if self.client.is_connected() {
-                    Err(eyre!("Error while disconnecting MQTT broker")
+
+        if let Some(client) = self.client.as_mut() {
+            match client.disconnect() {
+                Ok(()) => return Ok(()),
+                Err(error) => return Err(
+                    eyre!("Error while disconnecting from IoT core service")
                         .with_section(move || error.to_string().header("Reason:"))
-                    )
-                } else {
-                    warn!("There was an error while disconnecting MQTT broker, but we are apparently disconnected anyway: {}", error);
-                    Ok(())
-                }
+                    )            
             }
+        }
+
+        self.client = None;
+        self.connection = None;
+
+        Ok(())
+    }
+
+    fn subscribe(&mut self, topic: String) -> Result<(), Report> {
+        match self.client.as_mut().unwrap().subscribe(topic.clone(), rumqttc::QoS::AtLeastOnce) {
+            Ok(_) => Ok(()),
+            Err(error) => return Err(
+                eyre!("Error while subscribing to command and control topic.")
+                    .with_section(move || topic.header("Topic:"))
+                    .with_section(move || error.to_string().header("Reason:"))
+                )
         }
     }
 
     fn connect(&mut self) -> Result<(), Report> {
         trace!("in connect");
+
         // connect to the mqtt broker
-        match self.client.connect(self.conn_opts.clone()) {
-            Ok(_) => info!("Connected to IoT core service"),
-            Err(error) => return Err(
-                eyre!("Error while connecting to IoT core service")
-                    .with_section(move || error.to_string().header("Reason:"))
-                )
-        };
+        let (client, connection) = rumqttc::Client::new(self.mqttoptions.clone(), 10);
+        self.client = Some(client);
+        self.connection = Some(connection);
 
         // subscribe to command and control channels
-        match self.client.subscribe_many(&[self.config_topic.to_string(), format!("{}/#", self.command_topic_root.to_string())],
-                &[mqtt::QOS_1, mqtt::QOS_1]) {
-            Ok(_) => {},
-            Err(error) => return Err(
-                eyre!("Error while subscribing to command and control topics")
-                    .with_section(move || error.to_string().header("Reason:"))
-                )
-        }
+        self.subscribe(self.config_topic.clone())?;
+        self.subscribe(format!("{}/#", self.command_topic_root.to_string()))?;
 
         self.reattach_discovered_devices();
 
@@ -194,7 +194,7 @@ impl IotCoreClient {
     pub fn start_client(&mut self) -> Result<bool, Report> {
         trace!("in start_client");
         // cycle connection state
-        if self.client.is_connected() {
+        if self.client.is_some() {
             trace!("Entering to start_client() from unclean restart.");
             self.disconnect()?;
         }
@@ -208,85 +208,86 @@ impl IotCoreClient {
             if self.last_seen.elapsed() >= Duration::from_secs(58) {
                 warn!("No beacons detected for 58 seconds. Issuing thread clean restart.");
                 // exit cleanly and issue restart from main loop
-                if self.client.is_connected() {
-                    self.disconnect()?;
-                }
-                return Ok(false)
+                self.disconnect()?;
+                return Ok(false);
             }
 
             // check into the subscriptions if there are any incoming cnc messages
-            match self.consumer.try_recv() {
-                Ok(optmsg) => {
-                    if let Some(msg) = optmsg {
-                        trace!("incoming CNC message: '{:?}'", msg);
-
-                        if msg.topic() == self.config_topic {
-                            // we received new config, decode it
-                            let new_collectconfig: Option<CollectConfig> = match serde_json::from_str(&msg.payload_str()) {
-                                Ok(config) => Some(config),
-                                Err(error) => { 
-                                    error!("Unable to parse new collect config: {}", error);
-                                    None
-                                }
-                            };
-                            if new_collectconfig != self.collectconfig && new_collectconfig.is_some() {
-                                self.collectconfig = new_collectconfig;
-                                debug!("New collect config activated is '{:?}'", self.collectconfig);
-                                if !&self.collectconfig.as_ref().unwrap().collecting {
-                                    self.disable_collecting()?;
-                                } else {
-                                    self.enable_collecting()?;
-                                }
-                                // send config to CNC channel
-                                self.cnc_sender.send(IOTCoreCNCMessageKind::CONFIG(self.collectconfig.clone())).unwrap(); // TODO: fix unwrap    
-                            } else {
-                                debug!("Not replacing active collect config with identical one.");
-                            }
-                        } else if msg.topic().starts_with(&self.command_topic_root) {
-                            // command was sent into root or subfolder of command channel
-                            // TODO: implement subfolder support
-                            let command: Option<CNCCommandMessage> = match serde_json::from_str(&msg.payload_str()) {
-                                Ok(command) => Some(command),
-                                Err(error) => { 
-                                    error!("Unable to parse CNC command: {}", error);
-                                    None
-                                }
-                            };
-                            // also publish the command to CNC channel
-                            self.cnc_sender.send(IOTCoreCNCMessageKind::COMMAND(command.clone())).unwrap(); // TODO: fix unwrap
-                            if let Some(command) = command {
-                                // react locally to the message as well
-                                match command.command {
-                                    CNCCommand::COLLECT => {
-                                        info!("CNC command received: COLLECT beacons");
-                                        self.enable_collecting()?;
-                                    },
-                                    CNCCommand::PAUSE => {
-                                        warn!("CNC command received: PAUSE collecting beacons");
-                                        self.disable_collecting()?;
-                                    },
-                                    CNCCommand::SHUTDOWN => {
-                                        warn!("CNC command received: SHUTDOWN software");
-                                        self.detach_devices();
-                                        break;
-                                    },
-                                    CNCCommand::RESET => {
-                                        warn!("CNC command received: RESET software");
-                                        self.disconnect()?;
-                                        // send the current collect configuration to cnc channel so that
-                                        //  bluetooth thread can use it after it recovers
-                                        self.cnc_sender.send(IOTCoreCNCMessageKind::CONFIG(self.collectconfig.clone())).unwrap(); // TODO: fix unwrap
-                                        return Ok(false)
-                                    },
+            let incoming: Vec<Result<rumqttc::Event, rumqttc::ConnectionError>> = self.connection.as_ref().unwrap().iter().collect();
+            for msg in incoming {
+                match msg {
+                    Ok(msg) => {
+                        if let rumqttc::Event::Incoming(rumqttc::Packet::Publish(msg)) = msg {
+                            trace!("incoming CNC message: '{:?}'", msg);
+                            let payload = String::from_utf8(msg.payload.slice(0..msg.payload.len()).to_vec()).unwrap();
+                            if msg.topic == self.config_topic {
+                                // we received new config, decode it
+                                let new_collectconfig: Option<CollectConfig> = match serde_json::from_str(&payload) {
+                                    Ok(config) => Some(config),
+                                    Err(error) => { 
+                                        error!("Unable to parse new collect config: {}", error);
+                                        None
+                                    }
                                 };
+                                if new_collectconfig != self.collectconfig && new_collectconfig.is_some() {
+                                    self.collectconfig = new_collectconfig;
+                                    debug!("New collect config activated is '{:?}'", self.collectconfig);
+                                    if !&self.collectconfig.as_ref().unwrap().collecting {
+                                        self.disable_collecting()?;
+                                    } else {
+                                        self.enable_collecting()?;
+                                    }
+                                    // send config to CNC channel
+                                    self.cnc_sender.send(IOTCoreCNCMessageKind::CONFIG(self.collectconfig.clone())).unwrap(); // TODO: fix unwrap    
+                                } else {
+                                    debug!("Not replacing active collect config with identical one.");
+                                }
+                            } else if msg.topic.starts_with(&self.command_topic_root) {
+                                // command was sent into root or subfolder of command channel
+                                // TODO: implement subfolder support
+                                let command: Option<CNCCommandMessage> = match serde_json::from_str(&payload) {
+                                    Ok(command) => Some(command),
+                                    Err(error) => { 
+                                        error!("Unable to parse CNC command: {}", error);
+                                        None
+                                    }
+                                };
+                                // also publish the command to CNC channel
+                                self.cnc_sender.send(IOTCoreCNCMessageKind::COMMAND(command.clone())).unwrap(); // TODO: fix unwrap
+                                if let Some(command) = command {
+                                    // react locally to the message as well
+                                    match command.command {
+                                        CNCCommand::COLLECT => {
+                                            info!("CNC command received: COLLECT beacons");
+                                            self.enable_collecting()?;
+                                        },
+                                        CNCCommand::PAUSE => {
+                                            warn!("CNC command received: PAUSE collecting beacons");
+                                            self.disable_collecting()?;
+                                        },
+                                        CNCCommand::SHUTDOWN => {
+                                            warn!("CNC command received: SHUTDOWN software");
+                                            self.detach_devices();
+                                            break;
+                                        },
+                                        CNCCommand::RESET => {
+                                            warn!("CNC command received: RESET software");
+                                            self.disconnect()?;
+                                            // send the current collect configuration to cnc channel so that
+                                            //  bluetooth thread can use it after it recovers
+                                            self.cnc_sender.send(IOTCoreCNCMessageKind::CONFIG(self.collectconfig.clone())).unwrap(); // TODO: fix unwrap
+                                            return Ok(false)
+                                        },
+                                    };
+                                }
+                            } else {
+                                debug!("Unimplemented CNC topic in received message.");
                             }
-                        } else {
-                            debug!("Unimplemented CNC topic in received message.");
-                        }
-                    }
-                },
-                Err(_) => {}
-            };
+                        }        
+                    },
+                    Err(error) => {}
+                };
+            }
 
             // check into the channel to see if there are beacons to relay to the mqtt broker
             match self.channel_receiver.try_recv() {
@@ -352,7 +353,7 @@ impl IotCoreClient {
             // sleep for a while to reduce amount of CPU burn and idle for a while
             thread::sleep(time::Duration::from_millis(100));
         }
-        
+    
         self.disconnect()?;
         
         Ok(true)
@@ -360,7 +361,7 @@ impl IotCoreClient {
 
     fn try_attach_device(&mut self, address: &MacAddress) -> bool {
         trace!("in try_attach_device");
-        if self.client.is_connected() && self.discovered_tags.get(address).is_none() {
+        if self.client.is_some() && self.discovered_tags.get(address).is_none() {
             // try to attach a newly discovered beacon owner to this gateway
             //  (succesful only if bound)
             match self.publish_message(self.device_attach_topic(&address), "{}".to_string()) {
@@ -382,7 +383,7 @@ impl IotCoreClient {
 
     fn reattach_discovered_devices(&mut self) {
         trace!("in reattach_discovered_devices");
-        if self.client.is_connected() {
+        if self.client.is_some() {
             for (tag, _) in self.discovered_tags.clone().iter() {
                 match self.publish_message(self.device_attach_topic(&tag), "{}".to_string()) {
                     Ok(_) => info!("Discovered Ruuvi tag ({}) reattached to gateway succesfully.", tag.to_string(MacAddressFormat::Canonical).to_uppercase()),
@@ -400,7 +401,7 @@ impl IotCoreClient {
 
     fn detach_devices(&mut self) {
         trace!("in detach_devices");
-        if self.client.is_connected() {
+        if self.client.is_some() {
             for (tag, _) in self.discovered_tags.clone().iter() {
                 match self.publish_message(self.device_detach_topic(&tag), "{}".to_string()) {
                     Ok(_) => info!("Discovered Ruuvi tag ({}) detached from gateway succesfully.", tag.to_string(MacAddressFormat::Canonical).to_uppercase()),
@@ -438,81 +439,37 @@ impl IotCoreClient {
 
     pub fn build(appconfig: &AppConfig, r: &channel::Receiver<RuuviBluetoothBeacon>, cnc_s: &channel::Sender<IOTCoreCNCMessageKind>) -> Result<IotCoreClient, Report> {
         trace!("in build");
-        let create_opts = mqtt::CreateOptionsBuilder::new()
-            .client_id(appconfig.iotcore.client_id())
-            .mqtt_version(mqtt::types::MQTT_VERSION_3_1_1)
-            .server_uri("ssl://mqtt.googleapis.com:8883")
-            .persistence(mqtt::PersistenceType::None)
-            .finalize();
-
-        let mut cli = match mqtt::Client::new(create_opts) {
-            Ok(cli) => cli,
-            Err(error) => return Err(
-                eyre!("Unable to create Paho MQTT client instance")
-                    .with_section(move || error.to_string().header("Reason:"))
-                )
-        };
-        cli.set_timeout(Duration::from_secs(5));
-
-        let mut ssl_options_builder = mqtt::SslOptionsBuilder::new();
-        ssl_options_builder.ssl_version(mqtt::SslVersion::Tls_1_2);
-        if appconfig.identity.ca_certs.is_some() {
-            match ssl_options_builder.trust_store(appconfig.identity.ca_certs.as_ref().unwrap()) {
-                Ok(options_builder) => options_builder,
-                Err(error) => return Err(
-                    eyre!("Unable to use CA certificates in mqtt client")
-                        .with_section(move || error.to_string().header("Reason:"))
-                    )
-            };    
-        }
-        match ssl_options_builder.key_store(&appconfig.identity.public_key) {
-            Ok(options_builder) => options_builder,
-            Err(error) => return Err(
-                eyre!("Unable to use public key in mqtt client")
-                    .with_section(move || error.to_string().header("Reason:"))
-                )
-        };
-        match ssl_options_builder.private_key(&appconfig.identity.private_key) {
-            Ok(options_builder) => options_builder,
-            Err(error) => return Err(
-                eyre!("Unable to use private key in mqtt client")
-                    .with_section(move || error.to_string().header("Reason:"))
-                )
-        };
-        let ssl_options = ssl_options_builder.finalize();
 
         let jwt_factory = IotCoreAuthToken::build(appconfig);
+        let device_id = appconfig.iotcore.device_id.clone();
+
         let jwt_token = match jwt_factory.issue_new() {
             Ok(token) => token,
             Err(error) => return Err(
-                eyre!("Unable to issue original JWT token")
+                eyre!("Unable to issue initial JWT token")
                     .with_section(move || error.to_string().header("Reason:"))
                 )
         };
 
-        let conn_opts = mqtt::ConnectOptionsBuilder::new()
-            .user_name("not_used")
-            .password(jwt_token)
-            .ssl_options(ssl_options.clone())
-            .keep_alive_interval(Duration::from_secs(5*60))
-            .finalize();
-
-        // thru mspc relay incoming messages from cnc topics
-        let consumer = cli.start_consuming();
-
-        let device_id = appconfig.iotcore.device_id.clone();
+        let mut mqttoptions = rumqttc::MqttOptions::new(appconfig.iotcore.client_id(), "mqtt.googleapis.com", 8883);
+        mqttoptions.set_credentials(device_id.clone(), jwt_token);
+        if appconfig.identity.ca_certs.is_some() {
+            mqttoptions.set_ca(appconfig.identity.ca_as_vec()?.unwrap());
+        }
+        mqttoptions.set_client_auth(appconfig.identity.cert_as_vec()?, appconfig.identity.key_as_vec()?);
+        mqttoptions.set_keep_alive(5*60); // in seconds
+        mqttoptions.set_connection_timeout(10); // in seconds
 
         Ok(IotCoreClient {
-            ssl_opts: ssl_options,
-            conn_opts: conn_opts,
-            client: cli,
+            mqttoptions: mqttoptions,
+            client: None,
+            connection: None,
             jwt_factory: jwt_factory,
             channel_receiver: r.clone(),
             cnc_sender: cnc_s.clone(),
             config_topic: format!("/devices/{}/config", device_id),
             state_topic: format!("/devices/{}/state", device_id),
             command_topic_root: format!("/devices/{}/commands", device_id),
-            consumer: consumer,
             collectconfig: None,
             last_pause: None,
             last_seen: Instant::now(),
