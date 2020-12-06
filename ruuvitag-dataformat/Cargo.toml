@@ -1,5 +1,5 @@
 [package]
-name = "ruuvitag-parser"
+name = "ruuvitag-dataformat"
 version = "0.1.0"
 authors = ["Antti Peltonen <antti.peltonen@iki.fi>"]
 edition = "2018"

@@ -1587,7 +1587,7 @@ dependencies = [
  "log",
  "log4rs",
  "paho-mqtt",
- "ruuvitag-parser",
+ "ruuvitag-dataformat",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -1596,7 +1596,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ruuvitag-parser"
+name = "ruuvitag-dataformat"
 version = "0.1.0"
 dependencies = [
  "serde",

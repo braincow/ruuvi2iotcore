@@ -8,7 +8,7 @@ use serde::Serialize;
 use std::{time, thread};
 use std::clone::Clone;
 use structview::View;
-use ruuvitag_parser::RuuviTagDataFormat5;
+use ruuvitag_dataformat::RuuviTagDataFormat5;
 
 use crate::iotcore::{IOTCoreCNCMessageKind, CNCCommand};
 

@@ -24,5 +24,5 @@ paho-mqtt = "0.8.0"
 log4rs = "0.13.0"
 eui48 = "1.1.0"
 serde_yaml = "0.8.14"
-ruuvitag-parser = { version="0.1.0", path="ruuvitag-parser"}
+ruuvitag-dataformat = { version="0.1.0", path="ruuvitag-dataformat"}
 structview = "1.1.0"
