@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - enhancement: loops in bt scanner and iotcore threads now sleep for 100ms instead of 10ms on each loop
+- bugfix: only succesful submit of beacon queue will lead the queue to be emptied
 
 ### Removed
 
