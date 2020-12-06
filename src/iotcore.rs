@@ -311,18 +311,16 @@ impl IotCoreClient {
                                 trace!("publish individual beacon");
                                 match self.publish_message(topic, serde_json::to_string_pretty(&msg).unwrap()) {
                                     Ok(_) => {},
-                                    Err(error) => error!("Error on publishing message to MQTT: '{}'. Will retry.", error)
+                                    Err(error) => error!("Error on publishing message to MQTT: '{}'. Beacon lost.", error)
                                 };
                             } else if queue.len() >= self.collectconfig.as_ref().unwrap().collection_size() - 1 {
                                 trace!("publish beacon queue");
                                 queue.push(msg);
                                 debug!("Message queue size for '{}': {}/{}", address, queue.len(), self.collectconfig.as_ref().unwrap().collection_size());
                                 match self.publish_message(topic, serde_json::to_string_pretty(&queue).unwrap()) {
-                                    Ok(_) => {},
+                                    Ok(_) => { self.discovered_tags.insert(address, Vec::new()); },
                                     Err(error) => error!("Error on publishing message queue to MQTT: '{}'. Will retry.", error)
                                 };
-                                // empty the message queue
-                                self.discovered_tags.insert(address, Vec::new());
                             } else {
                                 trace!("add beacon to queue");
                                 // add beacon to queue
