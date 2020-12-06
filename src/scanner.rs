@@ -3,14 +3,14 @@ use btleplug::api::{CentralEvent, Central, Peripheral};
 use color_eyre::{eyre::eyre, SectionExt, Section, eyre::Report};
 use std::sync::mpsc::Receiver;
 use crossbeam::channel;
-use structview::View;
 use chrono;
 use serde::Serialize;
 use std::{time, thread};
 use std::clone::Clone;
+use structview::View;
+use ruuvitag_parser::RuuviTagDataFormat5;
 
-use crate::lib::ruuvi::RuuviTagDataFormat5;
-use crate::lib::iotcore::{IOTCoreCNCMessageKind, CNCCommand};
+use crate::iotcore::{IOTCoreCNCMessageKind, CNCCommand};
 
 #[derive(Debug, Serialize, Clone)]
 pub struct RuuviBluetoothBeacon {

@@ -10,9 +10,9 @@ use std::clone::Clone;
 use std::str::FromStr;
 use std::collections::HashMap;
 
-use crate::lib::configfile::AppConfig;
-use crate::lib::scanner::RuuviBluetoothBeacon;
-use crate::lib::jwt::IotCoreAuthToken;
+use crate::configfile::AppConfig;
+use crate::scanner::RuuviBluetoothBeacon;
+use crate::jwt::IotCoreAuthToken;
 
 #[derive(Debug,Clone)]
 pub enum IOTCoreCNCMessageKind {

@@ -1,7 +1,10 @@
 #[macro_use] extern crate log;
 #[macro_use] extern crate serde_json;
 
-mod lib;
+pub mod configfile;
+pub mod scanner;
+pub mod iotcore;
+pub mod jwt;
 
 use std::path::Path;
 use std::env;
@@ -12,9 +15,9 @@ use directories::ProjectDirs;
 use crossbeam::thread;
 use crossbeam::channel::unbounded;
 
-use crate::lib::configfile::AppConfig;
-use crate::lib::scanner::BluetoothScanner;
-use crate::lib::iotcore::IotCoreClient;
+use crate::configfile::AppConfig;
+use crate::scanner::BluetoothScanner;
+use crate::iotcore::IotCoreClient;
 
 fn main() -> Result<(), Report> {
     // initialize error handling

@@ -14,7 +14,6 @@ directories = "3.0.1"
 dotenv = "0.15.0"
 crossbeam = "0.8.0"
 btleplug = "0.5.4"
-structview = "1.1.0"
 serde = { version = "1.0.117", features = ["derive"] }
 toml = "0.5.7"
 log = "0.4.11"
@@ -25,6 +24,5 @@ paho-mqtt = "0.8.0"
 log4rs = "0.13.0"
 eui48 = "1.1.0"
 serde_yaml = "0.8.14"
-
-[dev-dependencies]
-hex = "0.4.2"
+ruuvitag-parser = { version="0.1.0", path="ruuvitag-parser"}
+structview = "1.1.0"

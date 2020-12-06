@@ -5,7 +5,7 @@ use frank_jwt::{Algorithm, encode};
 use serde::Serialize;
 use color_eyre::{eyre::eyre, SectionExt, Section, eyre::Report};
 
-use crate::lib::configfile::AppConfig;
+use crate::configfile::AppConfig;
 
 #[derive(Debug, Serialize)]
 pub struct JWTHeaders;
