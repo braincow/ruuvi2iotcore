@@ -1592,7 +1592,6 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "structview",
- "toml",
 ]
 
 [[package]]
@@ -1828,15 +1827,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2c9d3793400a45f954c52e73d068316d76b6f4e36977e3fcebb13a2721e80237"
 dependencies = [
  "crunchy",
-]
-
-[[package]]
-name = "toml"
-version = "0.5.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75cf45bb0bef80604d001caaec0d09da99611b3c0fd39d3080468875cdb65645"
-dependencies = [
- "serde",
 ]
 
 [[package]]
