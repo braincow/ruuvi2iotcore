@@ -11,4 +11,5 @@ debug-build:
 	cargo build
 
 debug-run: debug-pcap-permissions
+	rm -rf log
 	RUST_BACKTRACE=1 cargo run -- -w . -c ruuvi2iotcore.yaml -l log4rs.yaml
