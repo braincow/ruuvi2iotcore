@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+### Changed
+
+### Removed
+
+## [0.2.2] - 2020-12-13
+### Added
 - bugfix: detecting "stuck values" in beacons. if values in beacons for a ruuvi tag are identical three minutes apart issue bluetooth scanner thread restart
 ### Changed
 
