@@ -282,6 +282,7 @@ impl BluetoothScanner {
                                         // check against value measured 3 minutes ago and if it is identical
                                         //  something is wrong in the stack in which case restart thread to recover.
                                         if beacon_stuck_inventory.contains_key(&beacon.address) {
+                                            trace!("Comparing beacon data to see if scanner is stuck");
                                             let old_beacon = beacon_stuck_inventory.get(&beacon.address).unwrap();
                                             if chrono::Utc::now().signed_duration_since(old_beacon.timestamp) >= chrono::Duration::minutes(3) {
                                                 if beacon.data.to_string() == old_beacon.data.to_string() {
@@ -289,12 +290,14 @@ impl BluetoothScanner {
                                                     warn!("Bluetooth stack probably stuck.");
                                                     return Ok(false);
                                                 } else {
+                                                    debug!("Updating Ruuvi tag: {} in beacon_stuck_inventory after succesful test.", beacon.address);
                                                     // values from 3 minutes ago seemed to differ as expected. update inventory with this beacon
                                                     let beacon_clone = beacon.clone();
                                                     beacon_stuck_inventory.insert(beacon_clone.address.clone(), beacon_clone);
                                                 }
                                             }
                                         } else {
+                                            debug!("Adding discovered Ruuvi tag: {} to beacon_stuck_inventory to track stuck beacons (if any)", beacon.address);
                                             // first time im seeing this Ruuvi tag. add initial beacon
                                             let beacon_clone = beacon.clone();
                                             beacon_stuck_inventory.insert(beacon_clone.address.clone(), beacon_clone);
