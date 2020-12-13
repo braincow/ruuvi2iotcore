@@ -2,6 +2,7 @@ use btleplug::bluez::{adapter::ConnectedAdapter, manager::Manager};
 use btleplug::api::{CentralEvent, Central, Peripheral};
 use color_eyre::{eyre::eyre, SectionExt, Section, eyre::Report};
 use std::sync::mpsc::Receiver;
+use std::collections::HashMap;
 use crossbeam::channel;
 use chrono;
 use serde::Serialize;
@@ -188,6 +189,8 @@ impl BluetoothScanner {
             };
         }
 
+        let mut beacon_stuck_inventory: HashMap<String, RuuviBluetoothBeacon> = HashMap::new();
+
         loop {
             // peek into cnc channel to receive commands from iotcore
             match self.cnc_receiver.try_recv() {
@@ -269,11 +272,34 @@ impl BluetoothScanner {
                                                     .with_section(move || error.to_string().header("Reason:")) 
                                                 )
                                         };
+
                                         let beacon = RuuviBluetoothBeacon{
                                             data: *payload,
                                             timestamp: chrono::Utc::now(),
                                             address: bd_addr.unwrap().to_string()
                                         };
+
+                                        // check against value measured 3 minutes ago and if it is identical
+                                        //  something is wrong in the stack in which case restart thread to recover.
+                                        if beacon_stuck_inventory.contains_key(&beacon.address) {
+                                            let old_beacon = beacon_stuck_inventory.get(&beacon.address).unwrap();
+                                            if chrono::Utc::now().signed_duration_since(old_beacon.timestamp) >= chrono::Duration::minutes(3) {
+                                                if beacon.data.to_string() == old_beacon.data.to_string() {
+                                                    error!("Values from 3 minutes ago are identical for Ruuvi tag: {}", beacon.address);
+                                                    warn!("Bluetooth stack probably stuck.");
+                                                    return Ok(false);
+                                                } else {
+                                                    // values from 3 minutes ago seemed to differ as expected. update inventory with this beacon
+                                                    let beacon_clone = beacon.clone();
+                                                    beacon_stuck_inventory.insert(beacon_clone.address.clone(), beacon_clone);
+                                                }
+                                            }
+                                        } else {
+                                            // first time im seeing this Ruuvi tag. add initial beacon
+                                            let beacon_clone = beacon.clone();
+                                            beacon_stuck_inventory.insert(beacon_clone.address.clone(), beacon_clone);
+                                        }
+
                                         Some(beacon)
                                     },
                                     _ => {
