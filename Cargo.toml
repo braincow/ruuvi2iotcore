@@ -1,6 +1,6 @@
 [package]
 name = "ruuvi2iotcore"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["Antti Peltonen <antti.peltonen@iki.fi>"]
 edition = "2018"
 description = "Ruuvi tag beacons to GCP iot core"
