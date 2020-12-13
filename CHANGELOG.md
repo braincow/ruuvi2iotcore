@@ -6,11 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-
+- bugfix: detecting "stuck values" in beacons. if values in beacons for a ruuvi tag are identical three minutes apart issue bluetooth scanner thread restart
 ### Changed
 
 ### Removed
-
+- enhancement: last_seen is tracked now only in iot core thread and both threads (scanner included) are restarted based on that trigger instead of both having their own triggers.
 ## [0.2.1] - 2020-12-06
 ### Added
 
