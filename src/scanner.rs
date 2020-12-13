@@ -188,18 +188,7 @@ impl BluetoothScanner {
             };
         }
 
-        let mut last_seen = time::Instant::now();
-
         loop {
-            // check that we are actually doing work, and if not then issue a restart
-            //  we should receive multiple beacons within 30 seconds
-            if self.adapter_index.is_some() && last_seen.elapsed() >= time::Duration::from_secs(33) {
-                warn!("No beacons detected for 33 seconds. Issuing thread clean restart.");
-                // exit cleanly and issue restart from main loop
-                self.release_adapter()?;
-                return Ok(false);
-            }
-
             // peek into cnc channel to receive commands from iotcore
             match self.cnc_receiver.try_recv() {
                 Ok(msg) => match msg {
@@ -266,9 +255,6 @@ impl BluetoothScanner {
         
                         if let Some(data) = properties.manufacturer_data {
                             if data[0] == 153 && data[1] == 4 {
-                                // update the last_seen counter to verify internally that we are doing work
-                                last_seen = time::Instant::now();
-
                                 // these values in DEC instead of HEX to identify ruuvi tags with dataformat 5
                                 // ^--- fields in index 0 and 1 indicate 99 4 as the manufacturer (ruuvi) and index 3 points data version
                                 let packet = match data[2] {
