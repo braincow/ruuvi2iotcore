@@ -64,6 +64,7 @@ Refer to Google Cloud Internet Of Things (IoT) Core [documentation](https://clou
     * Optionally: Also "event_subfolder" in most cases will be empty or if you wish to use one you also need to set up the topic subfolder in IoT Core first. This can safely be omitted if not configured.
     * Optionally: Field "collection_size" is a buffer that dictates how many beacons should be collected before they are relayed to IoT Core; 0 or 1 will send every beacon individually and larger value will collect as many beacons first before publishing them via MQTT.
 5. Optionally: bluetooth_config and its adapter_index define a value upwards from 0 which is the index of installed Bluetooth adapters on the hardware you are running ruuvitag2iotcore on. Normally you do not need to change this and bluetooth_config can also be omitted.
+6. Optionally: Configuring stuck_data_threshold will set time in seconds between checks if values record from a tag's beacon are identical now and one from configured seconds ago and, if so, a forced scanner restart occurs to fix a potential problem in the Bluetooth stack. Default is three minutes (180 seconds), but if you wish to reduce this it can be anything equal or above of one (1) seconds.
 
 Once you have configured your gateway proceed to create devices into the registry:
 

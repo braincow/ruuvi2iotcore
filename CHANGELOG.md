@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 ### Changed
-
+- feature: Data stuck detection threshold is now configurable via IoT Core config messages.
 ### Removed
 
 ## [0.2.2] - 2020-12-13

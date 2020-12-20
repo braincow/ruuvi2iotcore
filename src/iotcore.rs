@@ -46,6 +46,7 @@ pub struct BluetoothConfig {
 pub struct CollectConfig {
     collecting: bool,
     event_subfolder: Option<String>,
+    pub stuck_data_threshold: Option<i64>,
     collection_size: Option<usize>,
     pub bluetooth: Option<BluetoothConfig>
 }

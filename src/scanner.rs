@@ -25,7 +25,8 @@ pub struct BluetoothScanner {
     bt_receiver: Option<Receiver<CentralEvent>>,
     channel_sender: channel::Sender<RuuviBluetoothBeacon>,
     cnc_receiver: channel::Receiver<IOTCoreCNCMessageKind>,
-    adapter_index: Option<usize>
+    adapter_index: Option<usize>,
+    stuck_data_threshold: Option<i64>,
 }
 
 impl BluetoothScanner {
@@ -217,6 +218,7 @@ impl BluetoothScanner {
                                 Some(bluetooth) => bluetooth.adapter_index,
                                 None => 0
                             };
+                            self.stuck_data_threshold = collectconfig.stuck_data_threshold;
                             if self.adapter_index.is_none() {
                                 trace!("Associate Bluetooth adapter for the first time");
                                 // associate the adapter
@@ -284,7 +286,7 @@ impl BluetoothScanner {
                                         if beacon_stuck_inventory.contains_key(&beacon.address) {
                                             trace!("Comparing beacon data to see if scanner is stuck");
                                             let old_beacon = beacon_stuck_inventory.get(&beacon.address).unwrap();
-                                            if chrono::Utc::now().signed_duration_since(old_beacon.timestamp) >= chrono::Duration::minutes(3) {
+                                            if chrono::Utc::now().signed_duration_since(old_beacon.timestamp) >= self.stuck_data_threshold() {
                                                 if beacon.data.to_string() == old_beacon.data.to_string() {
                                                     error!("Values from 3 minutes ago are identical for Ruuvi tag: {}", beacon.address);
                                                     warn!("Bluetooth stack probably stuck.");
@@ -330,6 +332,21 @@ impl BluetoothScanner {
         Ok(true)
     }
 
+    fn stuck_data_threshold(&self) -> chrono::Duration {
+        let default = 180;
+        if self.stuck_data_threshold.is_some() {
+            let mut threshold = self.stuck_data_threshold.unwrap();
+            if threshold <= 0 {
+                warn!("Configured stuck data threshold can not be less or equal to zero. Defaulting to {} seconds.", default);
+                threshold = default;
+            }
+            chrono::Duration::seconds(threshold)
+        } else {
+            // three minutes
+            chrono::Duration::seconds(default)
+        }
+    }
+
     pub fn build(s: &channel::Sender<RuuviBluetoothBeacon>, cnc_r: &channel::Receiver<IOTCoreCNCMessageKind>) -> Result<BluetoothScanner, Report> {
         trace!("in build");
         Ok(BluetoothScanner {
@@ -337,7 +354,8 @@ impl BluetoothScanner {
             bt_central: None,
             bt_receiver: None,
             channel_sender: s.clone(),
-            cnc_receiver: cnc_r.clone()
+            cnc_receiver: cnc_r.clone(),
+            stuck_data_threshold: None,
         })
     }
 }
