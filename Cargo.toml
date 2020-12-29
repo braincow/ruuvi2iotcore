@@ -17,7 +17,7 @@ btleplug = "0.5.4"
 serde = { version = "1.0.118", features = ["derive"] }
 log = "0.4.11"
 frank_jwt = "3.1.2"
-serde_json = "1.0.60"
+serde_json = "1.0.61"
 chrono = { version = "0.4.19", features = ["serde"] }
 paho-mqtt = "0.8.0"
 log4rs = "1.0.0"
