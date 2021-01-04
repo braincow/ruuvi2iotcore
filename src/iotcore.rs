@@ -47,10 +47,18 @@ pub struct CollectConfig {
     collecting: bool,
     event_subfolder: Option<String>,
     pub stuck_data_threshold: Option<i64>,
+    no_beacons_threshold: Option<u64>,
     collection_size: Option<usize>,
     pub bluetooth: Option<BluetoothConfig>
 }
 impl CollectConfig {
+    pub fn no_beacons_threshold(&self) -> u64 {
+        match self.no_beacons_threshold {
+            Some(no_beacons_threshold) => no_beacons_threshold,
+            None => 58
+        }
+    }
+
     pub fn collection_size(&self) -> usize {
         match self.collection_size {
             Some(size) => size,
@@ -205,8 +213,8 @@ impl IotCoreClient {
         // loop messages and wait for a ready signal
         loop {
             // check that we are actually doing work, and if not then issue a restart to threads
-            if self.last_seen.elapsed() >= Duration::from_secs(58) {
-                warn!("No beacons detected for 58 seconds. Issuing thread restart.");
+            if self.last_seen.elapsed() >= Duration::from_secs(self.collectconfig.as_ref().unwrap().no_beacons_threshold()) {
+                warn!("No beacons detected for {} seconds. Issuing thread restart.", self.collectconfig.as_ref().unwrap().no_beacons_threshold());
                 // emit reset signal to the cnc channel
                 self.cnc_sender.send(IOTCoreCNCMessageKind::COMMAND(
                     Some(CNCCommandMessage { command: CNCCommand::RESET }))).unwrap(); // TODO: fix unwrap

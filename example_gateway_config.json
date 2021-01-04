@@ -2,7 +2,8 @@
     "collecting": true,
     "event_subfolder": "dev",
     "collection_size": 3,
-    "stuck_data_threshold": 60,
+    "stuck_data_threshold": 180,
+    "no_beacons_threshold": 58,
     "bluetooth": {
         "adapter_index": 0
     }
