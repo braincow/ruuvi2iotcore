@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+### Changed
+### Removed
+
+## [0.2.3] - 2021-01-04
+### Added
 - openssl-sys and paho-mqtt crates now built as vendored to simplify cross compiling
 - using cargo rpm and cross to cross build binaries and RPM install packages
 
