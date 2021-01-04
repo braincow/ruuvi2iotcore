@@ -35,3 +35,4 @@ buildflags = ["--release"]
 
 [package.metadata.rpm.targets]
 ruuvi2iotcore = { path = "/usr/bin/ruuvi2iotcore" }
+

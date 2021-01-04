@@ -28,4 +28,12 @@ rm -rf %{buildroot}
 
 %files
 %defattr(-,root,root,-)
-%{_bindir}/*
+%{_bindir}/ruuvi2iotcore
+
+%post
+if [ -x /usr/sbin/setcap ]; then
+    setcap 'cap_net_raw,cap_net_admin+eip' %{_bindir}/ruuvi2iotcore
+else
+    chmod 1777 %{_bindir}/ruuvi2iotcore
+fi
+
