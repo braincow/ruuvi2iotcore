@@ -7,7 +7,7 @@ Summary: Ruuvi tag beacons to GCP iot core
 Version: @@VERSION@@
 Release: @@RELEASE@@%{?dist}
 License: MIT
-Group: Applications/System
+Group: Applications/Internet
 Source0: %{name}-%{version}.tar.gz
 
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
