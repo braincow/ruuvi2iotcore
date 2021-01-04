@@ -10,6 +10,19 @@ debug-pcap-permissions: debug-build
 debug-build:
 	cargo build
 
+debug-cross-build-armv7:
+	cross build --target armv7-unknown-linux-gnueabihf
+
 debug-run: debug-pcap-permissions
 	rm -rf log
 	RUST_BACKTRACE=1 cargo run -- -w . -c ruuvi2iotcore.yaml -l log4rs.yaml
+
+release-build:
+	cargo build --release
+
+cross-build-armv7:
+	cross build --release --target armv7-unknown-linux-gnueabihf
+
+clean:
+	rm -rf log
+	rm -rf target

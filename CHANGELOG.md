@@ -6,9 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- openssl-sys and paho-mqtt crates now built as vendored to simplify cross compiling
+
 ### Changed
 - feature: Data stuck detection threshold is now configurable via IoT Core config message.
 - feature: No beacons detection threshold is now configurable via IoT Core config message.
+
 ### Removed
 
 ## [0.2.2] - 2020-12-13

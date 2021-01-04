@@ -28,7 +28,7 @@ root:
 
 loggers:
   ruuvi2iotcore:
-    level: debug
+    level: trace
     appenders:
       - ruuvilog
     additive: true
