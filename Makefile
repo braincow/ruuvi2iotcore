@@ -26,3 +26,9 @@ cross-build-armv7:
 clean:
 	rm -rf log
 	rm -rf target
+
+rpm-armv7: cross-build-armv7
+	cargo rpm build --target armv7-unknown-linux-gnueabihf --no-cargo-build
+
+rpm: release-build
+	cargo rpm build --no-cargo-build
