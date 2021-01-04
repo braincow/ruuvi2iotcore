@@ -1273,9 +1273,9 @@ checksum = "13370dae44474229701bb69b90b4f4dca6404cb0357a2d50d635f1171dc3aa7b"
 
 [[package]]
 name = "paho-mqtt"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fd05242f9548ede5f53bde80e947df48042e4a7e02e3b5c28fdc03d3f9a7501"
+checksum = "d82fea0990fe54e75d575bbd9bc2ee5919fd10cc0b4a95f1967528083129fc4b"
 dependencies = [
  "futures",
  "futures-timer",
