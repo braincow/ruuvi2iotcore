@@ -36,3 +36,9 @@ buildflags = ["--release"]
 [package.metadata.rpm.targets]
 ruuvi2iotcore = { path = "/usr/bin/ruuvi2iotcore" }
 
+[package.metadata.rpm.files]
+"LICENSE" = { path = "/usr/share/doc/LICENSE" }
+"CHANGELOG.md" = { path = "/usr/share/doc/CHANGELOG.md" }
+"log4rs.yaml" = { path = "/usr/share/doc/log4rs.yaml" }
+"ruuvi2iotcore.yaml" = { path = "/usr/share/doc/ruuvi2iotcore.yaml" }
+"example_gateway_config.json" = { path = "/usr/share/doc/example_gateway_config.json" }

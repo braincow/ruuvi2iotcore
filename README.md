@@ -4,15 +4,9 @@ Ruuvi2iotcore is a GNU/Linux based gateway for relaying selected Ruuvi tag Bluet
 
 ## Installation
 
-After cloning this Git repository you need to install a few external C-libraries that are dependencies for Rust crates this project uses. These are:
-
-* OpenSSL development files (openssl-devel RPM package in Fedora)
-* Paho MQTT development files (paho-c-devel RPM package in Fedora)
-* Paho MQTT build also requires the "cmake" utility.
-
 If you do not yet have the Rust development environment setup please follow instructions for [Installing Rust](https://rustup.rs/) first as well.
 
-After C-language dependencies and Rust development environment have been set up you can compile the ruuvi2iotcore binary itself with Cargo:
+After Rust development environment has been set up you can compile the ruuvi2iotcore binary itself with Cargo:
 
 ```sh
 cargo build --release

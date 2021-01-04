@@ -22,6 +22,7 @@ BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
 rm -rf %{buildroot}
 mkdir -p %{buildroot}
 cp -a * %{buildroot}
+# ls -laR %{buildroot}
 
 %clean
 rm -rf %{buildroot}
@@ -29,6 +30,11 @@ rm -rf %{buildroot}
 %files
 %defattr(-,root,root,-)
 %{_bindir}/ruuvi2iotcore
+%license %{_docdir}/LICENSE
+%doc %{_docdir}/CHANGELOG.md
+%doc %{_docdir}/log4rs.yaml
+%doc %{_docdir}/ruuvi2iotcore.yaml
+%doc %{_docdir}/example_gateway_config.json
 
 %post
 if [ -x /usr/sbin/setcap ]; then
@@ -36,4 +42,3 @@ if [ -x /usr/sbin/setcap ]; then
 else
     chmod 1777 %{_bindir}/ruuvi2iotcore
 fi
-

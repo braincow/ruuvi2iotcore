@@ -20,15 +20,24 @@ debug-run: debug-pcap-permissions
 release-build:
 	cargo build --release
 
-cross-build-armv7:
+release-cross-build-armv7:
 	cross build --release --target armv7-unknown-linux-gnueabihf
 
 clean:
 	rm -rf log
 	rm -rf target
+	# if rpm's were built, get rid of the files there
+	rm .rpm/CHANGELOG.md .rpm/LICENSE .rpm/example_gateway_config.json .rpm/log4rs.yaml .rpm/ruuvi2iotcore.yaml || true
 
-rpm-armv7: cross-build-armv7
+copy-rpm-extra-files:
+	cp CHANGELOG.md .rpm
+	cp LICENSE .rpm
+	cp example_gateway_config.json .rpm
+	cp log4rs.yaml .rpm
+	cp ruuvi2iotcore.yaml .rpm
+
+release-rpm-armv7: release-cross-build-armv7 copy-rpm-extra-files
 	cargo rpm build --target armv7-unknown-linux-gnueabihf --no-cargo-build
 
-rpm: release-build
+release-rpm: release-build copy-rpm-extra-files
 	cargo rpm build --no-cargo-build

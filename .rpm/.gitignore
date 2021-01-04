@@ -1,0 +1,5 @@
+LICENSE
+CHANGELOG.md
+example_gateway_config.json
+log4rs.yaml
+ruuvi2iotcore.yaml
