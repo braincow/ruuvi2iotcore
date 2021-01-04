@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - openssl-sys and paho-mqtt crates now built as vendored to simplify cross compiling
+- using cargo rpm and cross to cross build binaries and RPM install packages
 
 ### Changed
 - feature: Data stuck detection threshold is now configurable via IoT Core config message.
