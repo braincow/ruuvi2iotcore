@@ -1494,7 +1494,7 @@ dependencies = [
 
 [[package]]
 name = "ruuvi2iotcore"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "btleplug",
  "chrono",
