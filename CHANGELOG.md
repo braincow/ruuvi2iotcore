@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 ### Changed
+- fix: using correct stuck beacon interval value on error message
 ### Removed
 
 ## [0.2.3] - 2021-01-04

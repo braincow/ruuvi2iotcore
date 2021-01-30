@@ -288,7 +288,8 @@ impl BluetoothScanner {
                                             let old_beacon = beacon_stuck_inventory.get(&beacon.address).unwrap();
                                             if chrono::Utc::now().signed_duration_since(old_beacon.timestamp) >= self.stuck_data_threshold() {
                                                 if beacon.data.to_string() == old_beacon.data.to_string() {
-                                                    error!("Values from 3 minutes ago are identical for Ruuvi tag: {}", beacon.address);
+                                                    error!("Values from {} seconds ago are identical for Ruuvi tag: {}", 
+                                                        self.stuck_data_threshold(), beacon.address);
                                                     warn!("Bluetooth stack probably stuck.");
                                                     return Ok(false);
                                                 } else {
