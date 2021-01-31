@@ -1,23 +1,23 @@
+use btleplug::api::{Central, CentralEvent, Peripheral};
 use btleplug::bluez::{adapter::ConnectedAdapter, manager::Manager};
-use btleplug::api::{CentralEvent, Central, Peripheral};
-use color_eyre::{eyre::eyre, SectionExt, Section, eyre::Report};
-use std::sync::mpsc::Receiver;
-use std::collections::HashMap;
-use crossbeam::channel;
 use chrono;
-use serde::Serialize;
-use std::{time, thread};
-use std::clone::Clone;
-use structview::View;
+use color_eyre::{eyre::eyre, eyre::Report, Section, SectionExt};
+use crossbeam::channel;
 use ruuvitag_dataformat::RuuviTagDataFormat5;
+use serde::Serialize;
+use std::clone::Clone;
+use std::collections::HashMap;
+use std::sync::mpsc::Receiver;
+use std::{thread, time};
+use structview::View;
 
-use crate::iotcore::{IOTCoreCNCMessageKind, CNCCommand};
+use crate::iotcore::{CNCCommand, IOTCoreCNCMessageKind};
 
 #[derive(Debug, Serialize, Clone)]
 pub struct RuuviBluetoothBeacon {
     pub data: RuuviTagDataFormat5,
     pub timestamp: chrono::DateTime<chrono::Utc>,
-    pub address: String
+    pub address: String,
 }
 
 pub struct BluetoothScanner {
@@ -35,10 +35,10 @@ impl BluetoothScanner {
 
         let manager = match Manager::new() {
             Ok(manager) => manager,
-            Err(error) => return Err(
-                eyre!("Unable to initialize Bluetooth manager")
-                    .with_section(move || error.to_string().header("Reason:")) 
-                )
+            Err(error) => {
+                return Err(eyre!("Unable to initialize Bluetooth manager")
+                    .with_section(move || error.to_string().header("Reason:")))
+            }
         };
 
         if self.adapter_index.is_none() {
@@ -48,53 +48,67 @@ impl BluetoothScanner {
 
         let adapters = match manager.adapters() {
             Ok(adapters) => adapters,
-            Err(error) => return Err(
-                eyre!("Unable to list Bluetooth adapters")
-                    .with_section(move || error.to_string().header("Reason:"))
-                )
+            Err(error) => {
+                return Err(eyre!("Unable to list Bluetooth adapters")
+                    .with_section(move || error.to_string().header("Reason:")))
+            }
         };
 
         let mut adapter = match adapters.into_iter().nth(adapter_index) {
             Some(adapter) => adapter,
-            None => return Err(
-                eyre!("Configured Bluetooth adapter not found.")
-                    .with_section(move || adapter_index.to_string().header("Configured adapter index:"))
+            None => {
+                return Err(
+                    eyre!("Configured Bluetooth adapter not found.").with_section(move || {
+                        adapter_index
+                            .to_string()
+                            .header("Configured adapter index:")
+                    }),
                 )
+            }
         };
 
         // reset the adapter -- clears out any errant state
         adapter = match manager.down(&adapter) {
             Ok(adapter) => adapter,
-            Err(error) => return Err(
-                eyre!("Unable to shutdown Bluetooth adapter")
-                    .with_section(move || error.to_string().header("Reason:")) 
-                )
+            Err(error) => {
+                return Err(eyre!("Unable to shutdown Bluetooth adapter")
+                    .with_section(move || error.to_string().header("Reason:")))
+            }
         };
         adapter = match manager.up(&adapter) {
             Ok(adapter) => adapter,
-            Err(error) => return Err(
-                eyre!("Unable to (re)start Bluetooth adapter")
-                    .with_section(move || error.to_string().header("Reason:")) 
-                )
+            Err(error) => {
+                return Err(eyre!("Unable to (re)start Bluetooth adapter")
+                    .with_section(move || error.to_string().header("Reason:")))
+            }
         };
 
         let central = match adapter.connect() {
             Ok(central) => central,
-            Err(error) => return Err(
-                eyre!("Unable to connect to Bluetooth adapter")
-                    .with_section(move || adapter_index.to_string().header("Configured adapter index:"))
-                    .with_section(move || error.to_string().header("Reason:")) 
-                )
+            Err(error) => {
+                return Err(eyre!("Unable to connect to Bluetooth adapter")
+                    .with_section(move || {
+                        adapter_index
+                            .to_string()
+                            .header("Configured adapter index:")
+                    })
+                    .with_section(move || error.to_string().header("Reason:")))
+            }
         };
         self.bt_central = Some(central.clone());
 
-        let receiver = match central.event_receiver() {
-            Some(receiver) => receiver,
-            None => return Err(
-                eyre!("Unable to build Bluetooth receiver instance for configured Bluetooth adapter")
-                    .with_section(move || adapter_index.to_string().header("Configured adapter index:"))
+        let receiver =
+            match central.event_receiver() {
+                Some(receiver) => receiver,
+                None => return Err(eyre!(
+                    "Unable to build Bluetooth receiver instance for configured Bluetooth adapter"
                 )
-        };
+                .with_section(move || {
+                    adapter_index
+                        .to_string()
+                        .header("Configured adapter index:")
+                })),
+            };
         self.bt_receiver = Some(receiver);
 
         Ok(())
@@ -108,11 +122,11 @@ impl BluetoothScanner {
                 Ok(_) => {
                     self.bt_central = None;
                     self.bt_receiver = None;
-                },
-                Err(error) =>  return Err(
-                    eyre!("Unable to release Bluetooth adapter")
-                        .with_section(move || error.to_string().header("Reason:"))
-                    )
+                }
+                Err(error) => {
+                    return Err(eyre!("Unable to release Bluetooth adapter")
+                        .with_section(move || error.to_string().header("Reason:")))
+                }
             };
         }
 
@@ -128,12 +142,17 @@ impl BluetoothScanner {
                 self.bt_central.as_ref().unwrap().active(false);
                 match self.bt_central.as_ref().unwrap().start_scan() {
                     Ok(_) => info!("Started passive Bluetooth scan on configured adapter"),
-                    Err(error) => return Err(
-                        eyre!("Unable to start Bluetooth scan on adapter")
-                            .with_section(move || self.adapter_index.unwrap().to_string().header("Configured adapter index:"))
-                            .with_section(move || error.to_string().header("Reason:"))
-                        )
-                };        
+                    Err(error) => {
+                        return Err(eyre!("Unable to start Bluetooth scan on adapter")
+                            .with_section(move || {
+                                self.adapter_index
+                                    .unwrap()
+                                    .to_string()
+                                    .header("Configured adapter index:")
+                            })
+                            .with_section(move || error.to_string().header("Reason:")))
+                    }
+                };
                 Ok(())
             }
         }
@@ -146,11 +165,16 @@ impl BluetoothScanner {
             Some(_) => {
                 match self.bt_central.as_ref().unwrap().stop_scan() {
                     Ok(_) => info!("Stopped passive Bluetooth scan on configured adapter"),
-                    Err(error) => return Err(
-                        eyre!("Unable to stop Bluetooth scan on adapter")
-                        .with_section(move || self.adapter_index.unwrap().to_string().header("Configured adapter index:"))
-                        .with_section(move || error.to_string().header("Reason:"))
-                    )
+                    Err(error) => {
+                        return Err(eyre!("Unable to stop Bluetooth scan on adapter")
+                            .with_section(move || {
+                                self.adapter_index
+                                    .unwrap()
+                                    .to_string()
+                                    .header("Configured adapter index:")
+                            })
+                            .with_section(move || error.to_string().header("Reason:")))
+                    }
                 };
                 Ok(())
             }
@@ -202,21 +226,24 @@ impl BluetoothScanner {
                                 warn!("CNC command received: SHUTDOWN software");
                                 self.release_adapter()?;
                                 break;
-                            },
+                            }
                             CNCCommand::RESET => {
                                 warn!("CNC command received: RESET software");
                                 self.release_adapter()?;
                                 return Ok(false);
                             }
-                            _ => warn!("Unimplemented CNC message for Bluetooth scanner: {:?}", command)
+                            _ => warn!(
+                                "Unimplemented CNC message for Bluetooth scanner: {:?}",
+                                command
+                            ),
                         },
-                        None => debug!("Empty command received from CNC channel")
+                        None => debug!("Empty command received from CNC channel"),
                     },
                     IOTCoreCNCMessageKind::CONFIG(collectconfig) => match collectconfig {
                         Some(collectconfig) => {
                             let new_adapter_index = match collectconfig.bluetooth {
                                 Some(bluetooth) => bluetooth.adapter_index,
-                                None => 0
+                                None => 0,
                             };
                             self.stuck_data_threshold = collectconfig.stuck_data_threshold;
                             if self.adapter_index.is_none() {
@@ -230,34 +257,39 @@ impl BluetoothScanner {
                                 self.stop_scan()?;
                                 self.adapter_index = Some(new_adapter_index);
                                 trace!("Restarting through main loop to finalize change of associated Bluetooth adapter");
-                                return Ok(false)
+                                return Ok(false);
                             } else {
                                 trace!("No change to associated Bluetooth adapter");
                             }
                             // (re)start scanning as a precaution against timeouts on some hardware or for the first time
                             self.stop_scan()?;
                             self.start_scan()?;
-                        },
-                        None => debug!("Empty collect config received from CNC channel")
-                    }
+                        }
+                        None => debug!("Empty collect config received from CNC channel"),
+                    },
                 },
                 Err(_) => {}
             };
 
             // check into the channel to see if there are beacons to relay to the mqtt broker
             if self.bt_receiver.is_some() && self.bt_central.is_some() {
-                match  self.bt_receiver.as_ref().unwrap().try_recv() {
+                match self.bt_receiver.as_ref().unwrap().try_recv() {
                     Ok(event) => {
                         let bd_addr = match event {
                             CentralEvent::DeviceDiscovered(bd_addr) => Some(bd_addr),
                             CentralEvent::DeviceUpdated(bd_addr) => Some(bd_addr),
-                            _ => None
+                            _ => None,
                         };
-        
+
                         // FIXME: unwrap()
-                        let peripheral = self.bt_central.as_ref().unwrap().peripheral(bd_addr.unwrap()).unwrap();
+                        let peripheral = self
+                            .bt_central
+                            .as_ref()
+                            .unwrap()
+                            .peripheral(bd_addr.unwrap())
+                            .unwrap();
                         let properties = peripheral.properties();
-        
+
                         if let Some(data) = properties.manufacturer_data {
                             if data[0] == 153 && data[1] == 4 {
                                 // these values in DEC instead of HEX to identify ruuvi tags with dataformat 5
@@ -275,19 +307,28 @@ impl BluetoothScanner {
                                                 )
                                         };
 
-                                        let beacon = RuuviBluetoothBeacon{
+                                        let beacon = RuuviBluetoothBeacon {
                                             data: *payload,
                                             timestamp: chrono::Utc::now(),
-                                            address: bd_addr.unwrap().to_string()
+                                            address: bd_addr.unwrap().to_string(),
                                         };
 
                                         // check against value measured 3 minutes ago and if it is identical
                                         //  something is wrong in the stack in which case restart thread to recover.
                                         if beacon_stuck_inventory.contains_key(&beacon.address) {
-                                            trace!("Comparing beacon data to see if scanner is stuck");
-                                            let old_beacon = beacon_stuck_inventory.get(&beacon.address).unwrap();
-                                            if chrono::Utc::now().signed_duration_since(old_beacon.timestamp) >= self.stuck_data_threshold() {
-                                                if beacon.data.to_string() == old_beacon.data.to_string() {
+                                            trace!(
+                                                "Comparing beacon data to see if scanner is stuck"
+                                            );
+                                            let old_beacon = beacon_stuck_inventory
+                                                .get(&beacon.address)
+                                                .unwrap();
+                                            if chrono::Utc::now()
+                                                .signed_duration_since(old_beacon.timestamp)
+                                                >= self.stuck_data_threshold()
+                                            {
+                                                if beacon.data.to_string()
+                                                    == old_beacon.data.to_string()
+                                                {
                                                     error!("Values from {} seconds ago are identical for Ruuvi tag: {}", 
                                                         self.stuck_data_threshold(), beacon.address);
                                                     warn!("Bluetooth stack probably stuck.");
@@ -296,30 +337,37 @@ impl BluetoothScanner {
                                                     debug!("Updating Ruuvi tag: {} in beacon_stuck_inventory after succesful test.", beacon.address);
                                                     // values from 3 minutes ago seemed to differ as expected. update inventory with this beacon
                                                     let beacon_clone = beacon.clone();
-                                                    beacon_stuck_inventory.insert(beacon_clone.address.clone(), beacon_clone);
+                                                    beacon_stuck_inventory.insert(
+                                                        beacon_clone.address.clone(),
+                                                        beacon_clone,
+                                                    );
                                                 }
                                             }
                                         } else {
                                             debug!("Adding discovered Ruuvi tag: {} to beacon_stuck_inventory to track stuck beacons (if any)", beacon.address);
                                             // first time im seeing this Ruuvi tag. add initial beacon
                                             let beacon_clone = beacon.clone();
-                                            beacon_stuck_inventory.insert(beacon_clone.address.clone(), beacon_clone);
+                                            beacon_stuck_inventory
+                                                .insert(beacon_clone.address.clone(), beacon_clone);
                                         }
 
                                         Some(beacon)
-                                    },
+                                    }
                                     _ => {
-                                        warn!("Ruuvitag data format '{}' not implemented yet.", data[2]);
+                                        warn!(
+                                            "Ruuvitag data format '{}' not implemented yet.",
+                                            data[2]
+                                        );
                                         None
                                     }
                                 };
-                
+
                                 if let Some(packet) = packet {
                                     self.channel_sender.send(packet).unwrap();
                                 }
                             }
-                        }    
-                    },
+                        }
+                    }
                     Err(_) => {}
                 };
             }
@@ -348,7 +396,10 @@ impl BluetoothScanner {
         }
     }
 
-    pub fn build(s: &channel::Sender<RuuviBluetoothBeacon>, cnc_r: &channel::Receiver<IOTCoreCNCMessageKind>) -> Result<BluetoothScanner, Report> {
+    pub fn build(
+        s: &channel::Sender<RuuviBluetoothBeacon>,
+        cnc_r: &channel::Receiver<IOTCoreCNCMessageKind>,
+    ) -> Result<BluetoothScanner, Report> {
         trace!("in build");
         Ok(BluetoothScanner {
             adapter_index: None,
