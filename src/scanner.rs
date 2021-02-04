@@ -1,6 +1,5 @@
 use btleplug::api::{Central, CentralEvent, Peripheral};
 use btleplug::bluez::{adapter::ConnectedAdapter, manager::Manager};
-use chrono;
 use color_eyre::{eyre::eyre, eyre::Report, Section, SectionExt};
 use crossbeam::channel;
 use ruuvitag_dataformat::RuuviTagDataFormat5;
