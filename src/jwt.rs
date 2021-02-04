@@ -18,7 +18,7 @@ pub struct JWTPayload {
 }
 
 impl JWTPayload {
-    fn new(audience: &String, lifetime: &u64) -> JWTPayload {
+    fn new(audience: &str, lifetime: &u64) -> JWTPayload {
         trace!("in new");
         let now = SystemTime::now();
         let secs_since_epoc = now.duration_since(UNIX_EPOCH).unwrap();
@@ -26,7 +26,7 @@ impl JWTPayload {
         JWTPayload {
             iat: secs_since_epoc.as_secs(),
             exp: secs_since_epoc.as_secs() + lifetime,
-            aud: audience.clone(),
+            aud: String::from(audience),
         }
     }
 }

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 ### Changed
+- fix: removed Rust antipatterns and beautified the codebase
+
 ### Removed
 
 ## [0.2.4] - 2021-01-30

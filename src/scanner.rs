@@ -1,6 +1,5 @@
 use btleplug::api::{Central, CentralEvent, Peripheral};
 use btleplug::bluez::{adapter::ConnectedAdapter, manager::Manager};
-use chrono;
 use color_eyre::{eyre::eyre, eyre::Report, Section, SectionExt};
 use crossbeam::channel;
 use ruuvitag_dataformat::RuuviTagDataFormat5;
@@ -136,7 +135,7 @@ impl BluetoothScanner {
     fn start_scan(&self) -> Result<(), Report> {
         trace!("in start_scan");
         match self.bt_central {
-            None => return Err(eyre!("No Bluetooth adapter reserved for use")),
+            None => Err(eyre!("No Bluetooth adapter reserved for use")),
             Some(_) => {
                 // use only passive scan as we are interested in beacons only
                 self.bt_central.as_ref().unwrap().active(false);
@@ -161,7 +160,7 @@ impl BluetoothScanner {
     fn stop_scan(&self) -> Result<(), Report> {
         trace!("in stop_scan");
         match self.bt_central {
-            None => return Err(eyre!("No Bluetooth adapter reserved for use")),
+            None => Err(eyre!("No Bluetooth adapter reserved for use")),
             Some(_) => {
                 match self.bt_central.as_ref().unwrap().stop_scan() {
                     Ok(_) => info!("Stopped passive Bluetooth scan on configured adapter"),
@@ -218,8 +217,8 @@ impl BluetoothScanner {
 
         loop {
             // peek into cnc channel to receive commands from iotcore
-            match self.cnc_receiver.try_recv() {
-                Ok(msg) => match msg {
+            if let Ok(msg) = self.cnc_receiver.try_recv() {
+                match msg {
                     IOTCoreCNCMessageKind::COMMAND(command) => match command {
                         Some(command) => match command.command {
                             CNCCommand::SHUTDOWN => {
@@ -267,109 +266,105 @@ impl BluetoothScanner {
                         }
                         None => debug!("Empty collect config received from CNC channel"),
                     },
-                },
-                Err(_) => {}
-            };
+                }
+            }
 
             // check into the channel to see if there are beacons to relay to the mqtt broker
             if self.bt_receiver.is_some() && self.bt_central.is_some() {
-                match self.bt_receiver.as_ref().unwrap().try_recv() {
-                    Ok(event) => {
-                        let bd_addr = match event {
-                            CentralEvent::DeviceDiscovered(bd_addr) => Some(bd_addr),
-                            CentralEvent::DeviceUpdated(bd_addr) => Some(bd_addr),
-                            _ => None,
-                        };
+                if let Ok(event) = self.bt_receiver.as_ref().unwrap().try_recv() {
+                    let bd_addr = match event {
+                        CentralEvent::DeviceDiscovered(bd_addr) => Some(bd_addr),
+                        CentralEvent::DeviceUpdated(bd_addr) => Some(bd_addr),
+                        _ => None,
+                    };
 
-                        // FIXME: unwrap()
-                        let peripheral = self
-                            .bt_central
-                            .as_ref()
-                            .unwrap()
-                            .peripheral(bd_addr.unwrap())
-                            .unwrap();
-                        let properties = peripheral.properties();
+                    // FIXME: unwrap()
+                    let peripheral = self
+                        .bt_central
+                        .as_ref()
+                        .unwrap()
+                        .peripheral(bd_addr.unwrap())
+                        .unwrap();
+                    let properties = peripheral.properties();
 
-                        if let Some(data) = properties.manufacturer_data {
-                            if data[0] == 153 && data[1] == 4 {
-                                // these values in DEC instead of HEX to identify ruuvi tags with dataformat 5
-                                // ^--- fields in index 0 and 1 indicate 99 4 as the manufacturer (ruuvi) and index 3 points data version
-                                let packet = match data[2] {
-                                    // https://github.com/ruuvi/ruuvi-sensor-protocols/blob/master/dataformat_05.md
-                                    // ^--- field in index 3 points to data version and everything forward from there are data points
-                                    // @TODO: error handling, aka handle unwrap()
-                                    5 => {
-                                        let payload = match RuuviTagDataFormat5::view(&data[3..]) {
-                                            Ok(payload) => payload,
-                                            Err(error) => return Err(
-                                                eyre!("Unable to parse Bluetooth packets peripheral properties into Ruuvitag v5 structure.")
-                                                    .with_section(move || error.to_string().header("Reason:")) 
-                                                )
-                                        };
+                    if let Some(data) = properties.manufacturer_data {
+                        if data[0] == 153 && data[1] == 4 {
+                            // these values in DEC instead of HEX to identify ruuvi tags with dataformat 5
+                            // ^--- fields in index 0 and 1 indicate 99 4 as the manufacturer (ruuvi) and index 3 points data version
+                            let packet = match data[2] {
+                                // https://github.com/ruuvi/ruuvi-sensor-protocols/blob/master/dataformat_05.md
+                                // ^--- field in index 3 points to data version and everything forward from there are data points
+                                // @TODO: error handling, aka handle unwrap()
+                                5 => {
+                                    let payload = match RuuviTagDataFormat5::view(&data[3..]) {
+                                        Ok(payload) => payload,
+                                        Err(error) => return Err(
+                                            eyre!("Unable to parse Bluetooth packets peripheral properties into Ruuvitag v5 structure.")
+                                                .with_section(move || error.to_string().header("Reason:")) 
+                                            )
+                                    };
 
-                                        let beacon = RuuviBluetoothBeacon {
-                                            data: *payload,
-                                            timestamp: chrono::Utc::now(),
-                                            address: bd_addr.unwrap().to_string(),
-                                        };
+                                    let beacon = RuuviBluetoothBeacon {
+                                        data: *payload,
+                                        timestamp: chrono::Utc::now(),
+                                        address: bd_addr.unwrap().to_string(),
+                                    };
 
-                                        // check against value measured 3 minutes ago and if it is identical
-                                        //  something is wrong in the stack in which case restart thread to recover.
-                                        if beacon_stuck_inventory.contains_key(&beacon.address) {
-                                            trace!(
-                                                "Comparing beacon data to see if scanner is stuck"
-                                            );
-                                            let old_beacon = beacon_stuck_inventory
-                                                .get(&beacon.address)
-                                                .unwrap();
-                                            if chrono::Utc::now()
-                                                .signed_duration_since(old_beacon.timestamp)
-                                                >= self.stuck_data_threshold()
-                                            {
-                                                if beacon.data.to_string()
-                                                    == old_beacon.data.to_string()
-                                                {
-                                                    error!("Values from {} seconds ago are identical for Ruuvi tag: {}", 
-                                                        self.stuck_data_threshold().num_seconds(), beacon.address);
-                                                    warn!("Bluetooth stack probably stuck.");
-                                                    return Ok(false);
-                                                } else {
-                                                    debug!("Updating Ruuvi tag: {} in beacon_stuck_inventory after succesful test.", beacon.address);
-                                                    // values from 3 minutes ago seemed to differ as expected. update inventory with this beacon
-                                                    let beacon_clone = beacon.clone();
-                                                    beacon_stuck_inventory.insert(
-                                                        beacon_clone.address.clone(),
-                                                        beacon_clone,
-                                                    );
-                                                }
-                                            }
-                                        } else {
-                                            debug!("Adding discovered Ruuvi tag: {} to beacon_stuck_inventory to track stuck beacons (if any)", beacon.address);
-                                            // first time im seeing this Ruuvi tag. add initial beacon
-                                            let beacon_clone = beacon.clone();
-                                            beacon_stuck_inventory
-                                                .insert(beacon_clone.address.clone(), beacon_clone);
-                                        }
-
-                                        Some(beacon)
-                                    }
-                                    _ => {
-                                        warn!(
-                                            "Ruuvitag data format '{}' not implemented yet.",
-                                            data[2]
+                                    // check against value measured 3 minutes ago and if it is identical
+                                    //  something is wrong in the stack in which case restart thread to recover.
+                                    if beacon_stuck_inventory.contains_key(&beacon.address) {
+                                        trace!(
+                                            "Comparing beacon data to see if scanner is stuck"
                                         );
-                                        None
+                                        let old_beacon = beacon_stuck_inventory
+                                            .get(&beacon.address)
+                                            .unwrap();
+                                        if chrono::Utc::now()
+                                            .signed_duration_since(old_beacon.timestamp)
+                                            >= self.stuck_data_threshold()
+                                        {
+                                            if beacon.data.to_string()
+                                                == old_beacon.data.to_string()
+                                            {
+                                                error!("Values from {} seconds ago are identical for Ruuvi tag: {}", 
+                                                    self.stuck_data_threshold().num_seconds(), beacon.address);
+                                                warn!("Bluetooth stack probably stuck.");
+                                                return Ok(false);
+                                            } else {
+                                                debug!("Updating Ruuvi tag: {} in beacon_stuck_inventory after succesful test.", beacon.address);
+                                                // values from 3 minutes ago seemed to differ as expected. update inventory with this beacon
+                                                let beacon_clone = beacon.clone();
+                                                beacon_stuck_inventory.insert(
+                                                    beacon_clone.address.clone(),
+                                                    beacon_clone,
+                                                );
+                                            }
+                                        }
+                                    } else {
+                                        debug!("Adding discovered Ruuvi tag: {} to beacon_stuck_inventory to track stuck beacons (if any)", beacon.address);
+                                        // first time im seeing this Ruuvi tag. add initial beacon
+                                        let beacon_clone = beacon.clone();
+                                        beacon_stuck_inventory
+                                            .insert(beacon_clone.address.clone(), beacon_clone);
                                     }
-                                };
 
-                                if let Some(packet) = packet {
-                                    self.channel_sender.send(packet).unwrap();
+                                    Some(beacon)
                                 }
+                                _ => {
+                                    warn!(
+                                        "Ruuvitag data format '{}' not implemented yet.",
+                                        data[2]
+                                    );
+                                    None
+                                }
+                            };
+
+                            if let Some(packet) = packet {
+                                self.channel_sender.send(packet).unwrap();
                             }
                         }
                     }
-                    Err(_) => {}
-                };
+                }
             }
 
             // sleep for a while to reduce amount of CPU burn and idle for a while
