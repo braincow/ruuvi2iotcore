@@ -53,17 +53,11 @@ pub struct CollectConfig {
 }
 impl CollectConfig {
     pub fn no_beacons_threshold(&self) -> u64 {
-        match self.no_beacons_threshold {
-            Some(no_beacons_threshold) => no_beacons_threshold,
-            None => 58,
-        }
+        self.no_beacons_threshold.unwrap_or(58)
     }
 
     pub fn collection_size(&self) -> usize {
-        match self.collection_size {
-            Some(size) => size,
-            None => 0,
-        }
+        self.collection_size.unwrap_or(0)
     }
 }
 
@@ -113,13 +107,15 @@ impl IotCoreClient {
             .qos(mqtt::QOS_1)
             .finalize();
 
-        Ok(match self.client.publish(mqtt_msg) {
+        match self.client.publish(mqtt_msg) {
             Ok(retval) => retval,
             Err(error) => {
                 return Err(eyre!("Error while publishing to MQTT")
                     .with_section(move || error.to_string().header("Reason:")))
             }
-        })
+        };
+
+        Ok(())
     }
 
     fn disconnect(&mut self) -> Result<(), Report> {
@@ -227,196 +223,188 @@ impl IotCoreClient {
         // loop messages and wait for a ready signal
         loop {
             // check that we are actually doing work, and if not then issue a restart to threads
-            if self.collectconfig.is_some() {
-                if self.last_seen.elapsed()
-                    >= Duration::from_secs(
-                        self.collectconfig.as_ref().unwrap().no_beacons_threshold(),
-                    )
-                {
-                    warn!(
-                        "No beacons detected for {} seconds. Issuing thread restart.",
-                        self.collectconfig.as_ref().unwrap().no_beacons_threshold()
-                    );
-                    // emit reset signal to the cnc channel
-                    self.cnc_sender
-                        .send(IOTCoreCNCMessageKind::COMMAND(Some(CNCCommandMessage {
-                            command: CNCCommand::RESET,
-                        })))
-                        .unwrap(); // TODO: fix unwrap
-                                   // exit cleanly and issue restart from main loop
-                    if self.client.is_connected() {
-                        self.disconnect()?;
-                    }
-                    return Ok(false);
+            if self.collectconfig.is_some() && self.last_seen.elapsed()
+                >= Duration::from_secs(
+                    self.collectconfig.as_ref().unwrap().no_beacons_threshold(),
+                )
+            {
+                warn!(
+                    "No beacons detected for {} seconds. Issuing thread restart.",
+                    self.collectconfig.as_ref().unwrap().no_beacons_threshold()
+                );
+                // emit reset signal to the cnc channel
+                self.cnc_sender
+                    .send(IOTCoreCNCMessageKind::COMMAND(Some(CNCCommandMessage {
+                        command: CNCCommand::RESET,
+                    })))
+                    .unwrap(); // TODO: fix unwrap
+                                // exit cleanly and issue restart from main loop
+                if self.client.is_connected() {
+                    self.disconnect()?;
                 }
+                return Ok(false);
             }
 
             // check into the subscriptions if there are any incoming cnc messages
-            match self.consumer.try_recv() {
-                Ok(optmsg) => {
-                    if let Some(msg) = optmsg {
-                        trace!("incoming CNC message: '{:?}'", msg);
+            if let Ok(optmsg) = self.consumer.try_recv() {
+                if let Some(msg) = optmsg {
+                    trace!("incoming CNC message: '{:?}'", msg);
 
-                        if msg.topic() == self.config_topic {
-                            // we received new config, decode it
-                            let new_collectconfig: Option<CollectConfig> =
-                                match serde_json::from_str(&msg.payload_str()) {
-                                    Ok(config) => Some(config),
-                                    Err(error) => {
-                                        error!("Unable to parse new collect config: {}", error);
-                                        None
-                                    }
-                                };
-                            if new_collectconfig != self.collectconfig
-                                && new_collectconfig.is_some()
-                            {
-                                self.collectconfig = new_collectconfig;
-                                debug!(
-                                    "New collect config activated is '{:?}'",
-                                    self.collectconfig
-                                );
-                                if !&self.collectconfig.as_ref().unwrap().collecting {
-                                    self.disable_collecting()?;
-                                } else {
+                    if msg.topic() == self.config_topic {
+                        // we received new config, decode it
+                        let new_collectconfig: Option<CollectConfig> =
+                            match serde_json::from_str(&msg.payload_str()) {
+                                Ok(config) => Some(config),
+                                Err(error) => {
+                                    error!("Unable to parse new collect config: {}", error);
+                                    None
+                                }
+                            };
+                        if new_collectconfig != self.collectconfig
+                            && new_collectconfig.is_some()
+                        {
+                            self.collectconfig = new_collectconfig;
+                            debug!(
+                                "New collect config activated is '{:?}'",
+                                self.collectconfig
+                            );
+                            if !&self.collectconfig.as_ref().unwrap().collecting {
+                                self.disable_collecting()?;
+                            } else {
+                                self.enable_collecting()?;
+                            }
+                            // send config to CNC channel
+                            self.cnc_sender
+                                .send(IOTCoreCNCMessageKind::CONFIG(self.collectconfig.clone()))
+                                .unwrap(); // TODO: fix unwrap
+                        } else {
+                            debug!("Not replacing active collect config with identical one.");
+                        }
+                    } else if msg.topic().starts_with(&self.command_topic_root) {
+                        // command was sent into root or subfolder of command channel
+                        // TODO: implement subfolder support
+                        let command: Option<CNCCommandMessage> =
+                            match serde_json::from_str(&msg.payload_str()) {
+                                Ok(command) => Some(command),
+                                Err(error) => {
+                                    error!("Unable to parse CNC command: {}", error);
+                                    None
+                                }
+                            };
+                        // also publish the command to CNC channel
+                        self.cnc_sender
+                            .send(IOTCoreCNCMessageKind::COMMAND(command.clone()))
+                            .unwrap(); // TODO: fix unwrap
+                        if let Some(command) = command {
+                            // react locally to the message as well
+                            match command.command {
+                                CNCCommand::COLLECT => {
+                                    info!("CNC command received: COLLECT beacons");
                                     self.enable_collecting()?;
                                 }
-                                // send config to CNC channel
-                                self.cnc_sender
-                                    .send(IOTCoreCNCMessageKind::CONFIG(self.collectconfig.clone()))
-                                    .unwrap(); // TODO: fix unwrap
-                            } else {
-                                debug!("Not replacing active collect config with identical one.");
-                            }
-                        } else if msg.topic().starts_with(&self.command_topic_root) {
-                            // command was sent into root or subfolder of command channel
-                            // TODO: implement subfolder support
-                            let command: Option<CNCCommandMessage> =
-                                match serde_json::from_str(&msg.payload_str()) {
-                                    Ok(command) => Some(command),
-                                    Err(error) => {
-                                        error!("Unable to parse CNC command: {}", error);
-                                        None
-                                    }
-                                };
-                            // also publish the command to CNC channel
-                            self.cnc_sender
-                                .send(IOTCoreCNCMessageKind::COMMAND(command.clone()))
-                                .unwrap(); // TODO: fix unwrap
-                            if let Some(command) = command {
-                                // react locally to the message as well
-                                match command.command {
-                                    CNCCommand::COLLECT => {
-                                        info!("CNC command received: COLLECT beacons");
-                                        self.enable_collecting()?;
-                                    }
-                                    CNCCommand::PAUSE => {
-                                        warn!("CNC command received: PAUSE collecting beacons");
-                                        self.disable_collecting()?;
-                                    }
-                                    CNCCommand::SHUTDOWN => {
-                                        warn!("CNC command received: SHUTDOWN software");
-                                        self.detach_devices();
-                                        break;
-                                    }
-                                    CNCCommand::RESET => {
-                                        warn!("CNC command received: RESET software");
-                                        self.disconnect()?;
-                                        // send the current collect configuration to cnc channel so that
-                                        //  bluetooth thread can use it after it recovers
-                                        self.cnc_sender
-                                            .send(IOTCoreCNCMessageKind::CONFIG(
-                                                self.collectconfig.clone(),
-                                            ))
-                                            .unwrap(); // TODO: fix unwrap
-                                        return Ok(false);
-                                    }
-                                };
-                            }
-                        } else {
-                            debug!("Unimplemented CNC topic in received message.");
-                        }
-                    }
-                }
-                Err(_) => {}
-            };
-
-            // check into the channel to see if there are beacons to relay to the mqtt broker
-            match self.channel_receiver.try_recv() {
-                Ok(msg) => {
-                    debug!("new incoming ruuvi tag beacon from bt thread: {:?}", msg);
-                    // update the last_seen counter to verify internally that we are doing work
-                    self.last_seen = Instant::now();
-
-                    let address = MacAddress::from_str(&msg.address).unwrap();
-
-                    let mut queue: Vec<RuuviBluetoothBeacon> =
-                        match self.discovered_tags.get(&address) {
-                            Some(queue) => queue.to_vec(),
-                            None => Vec::new(),
-                        };
-
-                    // submit the beacon to iotcore if collecting them is enabled
-                    if self.collectconfig.as_ref().unwrap().collecting {
-                        if self.try_attach_device(&address) {
-                            let topic = self.device_event_topic(&address).unwrap();
-
-                            if &self.collectconfig.as_ref().unwrap().collection_size() <= &1 {
-                                trace!("publish individual beacon");
-                                match self.publish_message(
-                                    topic,
-                                    serde_json::to_string_pretty(&msg).unwrap(),
-                                ) {
-                                    Ok(_) => {}
-                                    Err(error) => error!(
-                                        "Error on publishing message to MQTT: '{}'. Beacon lost.",
-                                        error
-                                    ),
-                                };
-                            } else if queue.len()
-                                >= self.collectconfig.as_ref().unwrap().collection_size() - 1
-                            {
-                                trace!("publish beacon queue");
-                                queue.push(msg);
-                                debug!(
-                                    "Message queue size for '{}': {}/{}",
-                                    address,
-                                    queue.len(),
-                                    self.collectconfig.as_ref().unwrap().collection_size()
-                                );
-                                match self.publish_message(topic, serde_json::to_string_pretty(&queue).unwrap()) {
-                                    Ok(_) => { self.discovered_tags.insert(address, Vec::new()); },
-                                    Err(error) => error!("Error on publishing message queue to MQTT: '{}'. Will retry.", error)
-                                };
-                            } else {
-                                trace!("add beacon to queue");
-                                // add beacon to queue
-                                queue.push(msg);
-                                debug!(
-                                    "Message queue size for '{}': {}/{}",
-                                    address,
-                                    queue.len(),
-                                    self.collectconfig.as_ref().unwrap().collection_size()
-                                );
-                                // replace in hashmap the message queue with new extended one
-                                self.discovered_tags.insert(address, queue.to_vec());
-                            }
+                                CNCCommand::PAUSE => {
+                                    warn!("CNC command received: PAUSE collecting beacons");
+                                    self.disable_collecting()?;
+                                }
+                                CNCCommand::SHUTDOWN => {
+                                    warn!("CNC command received: SHUTDOWN software");
+                                    self.detach_devices();
+                                    break;
+                                }
+                                CNCCommand::RESET => {
+                                    warn!("CNC command received: RESET software");
+                                    self.disconnect()?;
+                                    // send the current collect configuration to cnc channel so that
+                                    //  bluetooth thread can use it after it recovers
+                                    self.cnc_sender
+                                        .send(IOTCoreCNCMessageKind::CONFIG(
+                                            self.collectconfig.clone(),
+                                        ))
+                                        .unwrap(); // TODO: fix unwrap
+                                    return Ok(false);
+                                }
+                            };
                         }
                     } else {
-                        trace!("beacon collection is paused");
-                        if let Some(last_pause) = self.last_pause {
-                            if last_pause.elapsed() >= Duration::from_secs(4 * 60) {
-                                // we are paused, so to avoid timeout due to lack of published messages to broker we occasionally will need to
-                                //  publish our state to avoid that. as a short hand we essentially do a pause again.
-                                self.disable_collecting()?;
-                                warn!("Beacon collection is paused.");
-                            }
-                        } else {
-                            error!("Beacon collection is paused, but paused state was not established correctly.")
-                        }
+                        debug!("Unimplemented CNC topic in received message.");
                     }
                 }
-                Err(_) => {}
-            };
+            }
+
+            // check into the channel to see if there are beacons to relay to the mqtt broker
+            if let Ok(msg) = self.channel_receiver.try_recv() {
+                debug!("new incoming ruuvi tag beacon from bt thread: {:?}", msg);
+                // update the last_seen counter to verify internally that we are doing work
+                self.last_seen = Instant::now();
+
+                let address = MacAddress::from_str(&msg.address).unwrap();
+
+                let mut queue: Vec<RuuviBluetoothBeacon> =
+                    match self.discovered_tags.get(&address) {
+                        Some(queue) => queue.to_vec(),
+                        None => Vec::new(),
+                    };
+
+                // submit the beacon to iotcore if collecting them is enabled
+                if self.collectconfig.as_ref().unwrap().collecting {
+                    if self.try_attach_device(&address) {
+                        let topic = self.device_event_topic(&address).unwrap();
+
+                        if self.collectconfig.as_ref().unwrap().collection_size() <= 1 {
+                            trace!("publish individual beacon");
+                            match self.publish_message(
+                                topic,
+                                serde_json::to_string_pretty(&msg).unwrap(),
+                            ) {
+                                Ok(_) => {}
+                                Err(error) => error!(
+                                    "Error on publishing message to MQTT: '{}'. Beacon lost.",
+                                    error
+                                ),
+                            };
+                        } else if queue.len()
+                            >= self.collectconfig.as_ref().unwrap().collection_size() - 1
+                        {
+                            trace!("publish beacon queue");
+                            queue.push(msg);
+                            debug!(
+                                "Message queue size for '{}': {}/{}",
+                                address,
+                                queue.len(),
+                                self.collectconfig.as_ref().unwrap().collection_size()
+                            );
+                            match self.publish_message(topic, serde_json::to_string_pretty(&queue).unwrap()) {
+                                Ok(_) => { self.discovered_tags.insert(address, Vec::new()); },
+                                Err(error) => error!("Error on publishing message queue to MQTT: '{}'. Will retry.", error)
+                            };
+                        } else {
+                            trace!("add beacon to queue");
+                            // add beacon to queue
+                            queue.push(msg);
+                            debug!(
+                                "Message queue size for '{}': {}/{}",
+                                address,
+                                queue.len(),
+                                self.collectconfig.as_ref().unwrap().collection_size()
+                            );
+                            // replace in hashmap the message queue with new extended one
+                            self.discovered_tags.insert(address, queue.to_vec());
+                        }
+                    }
+                } else {
+                    trace!("beacon collection is paused");
+                    if let Some(last_pause) = self.last_pause {
+                        if last_pause.elapsed() >= Duration::from_secs(4 * 60) {
+                            // we are paused, so to avoid timeout due to lack of published messages to broker we occasionally will need to
+                            //  publish our state to avoid that. as a short hand we essentially do a pause again.
+                            self.disable_collecting()?;
+                            warn!("Beacon collection is paused.");
+                        }
+                    } else {
+                        error!("Beacon collection is paused, but paused state was not established correctly.")
+                    }
+                }
+            }
 
             // sleep for a while to reduce amount of CPU burn and idle for a while
             thread::sleep(time::Duration::from_millis(100));
@@ -613,15 +601,15 @@ impl IotCoreClient {
 
         Ok(IotCoreClient {
             ssl_opts: ssl_options,
-            conn_opts: conn_opts,
+            conn_opts,
             client: cli,
-            jwt_factory: jwt_factory,
+            jwt_factory,
             channel_receiver: r.clone(),
             cnc_sender: cnc_s.clone(),
             config_topic: format!("/devices/{}/config", device_id),
             state_topic: format!("/devices/{}/state", device_id),
             command_topic_root: format!("/devices/{}/commands", device_id),
-            consumer: consumer,
+            consumer,
             collectconfig: None,
             last_pause: None,
             last_seen: Instant::now(),
