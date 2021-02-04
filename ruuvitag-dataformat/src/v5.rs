@@ -1,32 +1,39 @@
-use std::fmt;
+use serde::ser::{SerializeStruct, Serializer};
 use serde::Serialize;
-use serde::ser::{Serializer, SerializeStruct};
+use std::fmt;
 
 #[derive(Debug, Serialize)]
 pub struct RuuviTagAccelaration {
     on_x_axis: f32,
     on_y_axis: f32,
-    on_z_axis: f32
+    on_z_axis: f32,
 }
 
 impl RuuviTagAccelaration {
     fn sqrt(&self) -> f32 {
-        (self.on_x_axis * self.on_x_axis + self.on_y_axis * self.on_y_axis + self.on_z_axis * self.on_z_axis).sqrt().round()
+        (self.on_x_axis * self.on_x_axis
+            + self.on_y_axis * self.on_y_axis
+            + self.on_z_axis * self.on_z_axis)
+            .sqrt()
+            .round()
     }
 }
 
 impl fmt::Display for RuuviTagAccelaration {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "(acceleration={}mG, on_x={}mG, on_y={}mG, on_z={}mG)",
+        write!(
+            f,
+            "(acceleration={}mG, on_x={}mG, on_y={}mG, on_z={}mG)",
             self.sqrt(),
             self.on_x_axis,
             self.on_y_axis,
-            self.on_z_axis)
+            self.on_z_axis
+        )
     }
 }
 
 // https://github.com/ruuvi/ruuvi-sensor-protocols/blob/master/dataformat_05.md
-#[derive(Debug,Clone, Copy, structview::View)]
+#[derive(Debug, Clone, Copy, structview::View)]
 #[repr(C)]
 pub struct RuuviTagDataFormat5 {
     temperature: structview::i16_be,
@@ -37,7 +44,7 @@ pub struct RuuviTagDataFormat5 {
     acceleration_z: structview::i16_be,
     powerinfo: structview::u16_be,
     movement_counter: u8,
-    measurement_sequence_number: structview::u16_be
+    measurement_sequence_number: structview::u16_be,
 }
 
 impl Serialize for RuuviTagDataFormat5 {
@@ -52,7 +59,10 @@ impl Serialize for RuuviTagDataFormat5 {
         state.serialize_field("acceleration", &self.get_accelaration())?;
         state.serialize_field("powerinfo", &self.get_battery())?;
         state.serialize_field("movement_counter", &self.get_movement_counter())?;
-        state.serialize_field("measurement_sequence_number", &self.get_measurement_sequence_number())?;
+        state.serialize_field(
+            "measurement_sequence_number",
+            &self.get_measurement_sequence_number(),
+        )?;
         state.end()
     }
 }
@@ -117,7 +127,7 @@ impl fmt::Display for RuuviTagDataFormat5 {
 mod tests {
     /*
      * About test cases:
-     * 
+     *
      * https://github.com/ruuvi/ruuvi-sensor-protocols/blob/master/dataformat_05.md
      * outlines the test cases for valid, min and max values
      */
