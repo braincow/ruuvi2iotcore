@@ -135,7 +135,7 @@ impl BluetoothScanner {
     fn start_scan(&self) -> Result<(), Report> {
         trace!("in start_scan");
         match self.bt_central {
-            None => return Err(eyre!("No Bluetooth adapter reserved for use")),
+            None => Err(eyre!("No Bluetooth adapter reserved for use")),
             Some(_) => {
                 // use only passive scan as we are interested in beacons only
                 self.bt_central.as_ref().unwrap().active(false);
@@ -160,7 +160,7 @@ impl BluetoothScanner {
     fn stop_scan(&self) -> Result<(), Report> {
         trace!("in stop_scan");
         match self.bt_central {
-            None => return Err(eyre!("No Bluetooth adapter reserved for use")),
+            None => Err(eyre!("No Bluetooth adapter reserved for use")),
             Some(_) => {
                 match self.bt_central.as_ref().unwrap().stop_scan() {
                     Ok(_) => info!("Stopped passive Bluetooth scan on configured adapter"),
