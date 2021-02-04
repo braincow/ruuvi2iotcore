@@ -330,7 +330,7 @@ impl BluetoothScanner {
                                                     == old_beacon.data.to_string()
                                                 {
                                                     error!("Values from {} seconds ago are identical for Ruuvi tag: {}", 
-                                                        self.stuck_data_threshold(), beacon.address);
+                                                        self.stuck_data_threshold().num_seconds(), beacon.address);
                                                     warn!("Bluetooth stack probably stuck.");
                                                     return Ok(false);
                                                 } else {
