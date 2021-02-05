@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 ### Changed
+- fix: stuck beacon interval was incorrectly formatted when printed out in error statement. now correctly outputs value in seconds.
 - fix: removed Rust antipatterns and beautified the codebase
 
 ### Removed
