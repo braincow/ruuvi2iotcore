@@ -144,7 +144,7 @@ impl IotCoreClient {
             Ok(_) => info!("Connected to IoT core service"),
             Err(error) => {
                 return Err(eyre!("Error while connecting to IoT core service")
-                    .with_section(move || error.to_string().header("Reason:")))
+                    .with_section(move || error.to_string().header("Reason:")));
             }
         };
 
@@ -223,10 +223,11 @@ impl IotCoreClient {
         // loop messages and wait for a ready signal
         loop {
             // check that we are actually doing work, and if not then issue a restart to threads
-            if self.collectconfig.is_some() && self.last_seen.elapsed()
-                >= Duration::from_secs(
-                    self.collectconfig.as_ref().unwrap().no_beacons_threshold(),
-                )
+            if self.collectconfig.is_some()
+                && self.last_seen.elapsed()
+                    >= Duration::from_secs(
+                        self.collectconfig.as_ref().unwrap().no_beacons_threshold(),
+                    )
             {
                 warn!(
                     "No beacons detected for {} seconds. Issuing thread restart.",
@@ -238,7 +239,7 @@ impl IotCoreClient {
                         command: CNCCommand::RESET,
                     })))
                     .unwrap(); // TODO: fix unwrap
-                                // exit cleanly and issue restart from main loop
+                               // exit cleanly and issue restart from main loop
                 if self.client.is_connected() {
                     self.disconnect()?;
                 }
@@ -260,14 +261,9 @@ impl IotCoreClient {
                                     None
                                 }
                             };
-                        if new_collectconfig != self.collectconfig
-                            && new_collectconfig.is_some()
-                        {
+                        if new_collectconfig != self.collectconfig && new_collectconfig.is_some() {
                             self.collectconfig = new_collectconfig;
-                            debug!(
-                                "New collect config activated is '{:?}'",
-                                self.collectconfig
-                            );
+                            debug!("New collect config activated is '{:?}'", self.collectconfig);
                             if !&self.collectconfig.as_ref().unwrap().collecting {
                                 self.disable_collecting()?;
                             } else {
@@ -339,11 +335,11 @@ impl IotCoreClient {
 
                 let address = MacAddress::from_str(&msg.address).unwrap();
 
-                let mut queue: Vec<RuuviBluetoothBeacon> =
-                    match self.discovered_tags.get(&address) {
-                        Some(queue) => queue.to_vec(),
-                        None => Vec::new(),
-                    };
+                let mut queue: Vec<RuuviBluetoothBeacon> = match self.discovered_tags.get(&address)
+                {
+                    Some(queue) => queue.to_vec(),
+                    None => Vec::new(),
+                };
 
                 // submit the beacon to iotcore if collecting them is enabled
                 if self.collectconfig.as_ref().unwrap().collecting {
@@ -352,10 +348,9 @@ impl IotCoreClient {
 
                         if self.collectconfig.as_ref().unwrap().collection_size() <= 1 {
                             trace!("publish individual beacon");
-                            match self.publish_message(
-                                topic,
-                                serde_json::to_string_pretty(&msg).unwrap(),
-                            ) {
+                            match self
+                                .publish_message(topic, serde_json::to_string_pretty(&msg).unwrap())
+                            {
                                 Ok(_) => {}
                                 Err(error) => error!(
                                     "Error on publishing message to MQTT: '{}'. Beacon lost.",
@@ -373,9 +368,17 @@ impl IotCoreClient {
                                 queue.len(),
                                 self.collectconfig.as_ref().unwrap().collection_size()
                             );
-                            match self.publish_message(topic, serde_json::to_string_pretty(&queue).unwrap()) {
-                                Ok(_) => { self.discovered_tags.insert(address, Vec::new()); },
-                                Err(error) => error!("Error on publishing message queue to MQTT: '{}'. Will retry.", error)
+                            match self.publish_message(
+                                topic,
+                                serde_json::to_string_pretty(&queue).unwrap(),
+                            ) {
+                                Ok(_) => {
+                                    self.discovered_tags.insert(address, Vec::new());
+                                }
+                                Err(error) => error!(
+                                    "Error on publishing message queue to MQTT: '{}'. Will retry.",
+                                    error
+                                ),
                             };
                         } else {
                             trace!("add beacon to queue");
