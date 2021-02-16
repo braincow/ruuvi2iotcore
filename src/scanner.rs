@@ -113,10 +113,8 @@ impl BluetoothScanner {
         match self.bt_central {
             None => Err(eyre!("No Bluetooth adapter reserved for use")),
             Some(_) => {
-                // use only passive scan as we are interested in beacons only
-                self.bt_central.as_ref().unwrap().active(false);
                 match self.bt_central.as_ref().unwrap().start_scan() {
-                    Ok(_) => info!("Started passive Bluetooth scan on configured adapter"),
+                    Ok(_) => info!("Started Bluetooth scan on configured adapter"),
                     Err(error) => {
                         return Err(eyre!("Unable to start Bluetooth scan on adapter")
                             .with_section(move || {
@@ -239,16 +237,17 @@ impl BluetoothScanner {
                     let properties = peripheral.properties();
 
                     let data = properties.manufacturer_data;
-                    trace!("{:?}", data);
-                    /*                    if data[0] == 153 && data[1] == 4 {
-                        // these values in DEC instead of HEX to identify ruuvi tags with dataformat 5
+                    trace!("Bluetooth manufacturer data: {:?}", data);
+                    if data.contains_key(&1177) {
                         // ^--- fields in index 0 and 1 indicate 99 4 as the manufacturer (ruuvi) and index 3 points data version
-                        let packet = match data[2] {
+                        //  and therefore 1177 is DEC presentation of 499
+                        trace!("its a Ruuvitag!");
+                        let packet = match data[&1177][0] {
                             // https://github.com/ruuvi/ruuvi-sensor-protocols/blob/master/dataformat_05.md
                             // ^--- field in index 3 points to data version and everything forward from there are data points
-                            // @TODO: error handling, aka handle unwrap()
                             5 => {
-                                let payload = match RuuviTagDataFormat5::view(&data[3..]) {
+                                let payload = match RuuviTagDataFormat5::view(&data[&1177][1..]) {
+                                    // ^--- we read the payload as slice from second byte forward as first byte identifies format
                                         Ok(payload) => payload,
                                         Err(error) => return Err(
                                             eyre!("Unable to parse Bluetooth packets peripheral properties into Ruuvitag v5 structure.")
@@ -296,7 +295,10 @@ impl BluetoothScanner {
                                 Some(beacon)
                             }
                             _ => {
-                                warn!("Ruuvitag data format '{}' not implemented yet.", data[2]);
+                                warn!(
+                                    "Ruuvitag data format '{}' not implemented yet.",
+                                    data[&1177][1]
+                                );
                                 None
                             }
                         };
@@ -304,7 +306,7 @@ impl BluetoothScanner {
                         if let Some(packet) = packet {
                             self.channel_sender.send(packet).unwrap();
                         }
-                    } */
+                    }
                 }
             }
 
