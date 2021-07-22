@@ -40,5 +40,4 @@ loggers:
     appenders:
       - btlepluglog
     additive: false
-
 # eof
