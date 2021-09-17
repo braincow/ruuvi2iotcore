@@ -23,7 +23,7 @@ chrono = { version = "0.4.19", features = ["serde"] }
 paho-mqtt = { version = "0.9.1", features = [ "bundled", "vendored-ssl" ] }
 log4rs = "1.0.0"
 eui48 = "1.1.0"
-serde_yaml = "0.8.20"
+serde_yaml = "0.8.21"
 ruuvitag-dataformat = { version="0.1.0", path="ruuvitag-dataformat"}
 structview = "1.1.0"
 
