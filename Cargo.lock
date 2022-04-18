@@ -1184,10 +1184,12 @@ checksum = "2386b4ebe91c2f7f51082d4cefa145d030e33a1842a96b12e4885cc3c01f7a55"
 
 [[package]]
 name = "paho-mqtt"
-version = "0.9.1"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d82fea0990fe54e75d575bbd9bc2ee5919fd10cc0b4a95f1967528083129fc4b"
+checksum = "eb14591e27a6575fc41d343650ea86d71ffa6e94e7378a14edf4bbd124d8105e"
 dependencies = [
+ "async-channel",
+ "crossbeam-channel",
  "futures",
  "futures-timer",
  "libc",
@@ -1198,9 +1200,9 @@ dependencies = [
 
 [[package]]
 name = "paho-mqtt-sys"
-version = "0.5.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ad9ac6a77a7e7c70cd51262b94ab666c9e4c38fb0f4201dba8d7f8589aa8ce4"
+checksum = "10e6244f27644eed5709e318a3ad7f785906fbb6030f0a9b9ba50923b456c0c5"
 dependencies = [
  "cmake",
  "openssl-sys",
