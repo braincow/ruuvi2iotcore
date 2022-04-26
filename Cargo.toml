@@ -14,7 +14,7 @@ clap = "2.34.0"
 directories = "4.0.1"
 dotenv = "0.15.0"
 crossbeam = "0.8.1"
-btleplug = "^0.5"
+btleplug = "^0.9"
 serde = { version = "1.0.135", features = ["derive"] }
 log = "0.4.14"
 frank_jwt = "3.1.2"
