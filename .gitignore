@@ -3,3 +3,4 @@ test.crt
 test.key
 roots.pem
 /log
+fleet.toml
